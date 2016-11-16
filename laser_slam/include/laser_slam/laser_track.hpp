@@ -150,6 +150,11 @@ class LaserTrack {
   SE3 convertTransformationMatrixToSE3(
       const PointMatcher::TransformationParameters& transformation_matrix) const;
 
+  std::vector<LaserScan>::const_iterator getIteratorToScanAtTime(
+      const curves::Time& time_ns) const;
+
+  void buildSubMapAroundTime(const curves::Time& time_ns, DataPoints* submap_out) const;
+
   // TODO move pose_measurements_ to the Trajectory type.
   // Pose measurements in world frame.
   PoseVector pose_measurements_;

@@ -91,7 +91,35 @@ void LaserTrack::processLoopClosure(const RelativePose& loop_closure) {
   CHECK_LE(loop_closure.time_a_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
   CHECK_GE(loop_closure.time_b_ns, trajectory_.getMinTime()) << "Loop closure has invalid time.";
   CHECK_LE(loop_closure.time_b_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
-  loop_closures_.push_back(loop_closure);
+
+  if (params_.do_icp_step_on_loop_closures) {
+    // Get the initial guess.
+    PointMatcher::TransformationParameters initial_guess =
+        loop_closure.T_a_b.getTransformationMatrix().cast<float>();
+
+    // Create the sub maps.
+    Clock clock;
+    DataPoints sub_map_a;
+    DataPoints sub_map_b;
+    buildSubMapAroundTime(loop_closure.time_a_ns, &sub_map_a);
+    buildSubMapAroundTime(loop_closure.time_b_ns, &sub_map_b);
+    clock.takeTime();
+    LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
+
+    // Compute the ICP solution.
+    clock.start();
+    PointMatcher::TransformationParameters icp_solution = icp_.compute(sub_map_b, sub_map_a,
+                                                                       initial_guess);
+    clock.takeTime();
+    LOG(INFO) << "Took " << clock.getRealTime() <<
+        " ms to compute the icp_solution for the loop closure.";
+
+    RelativePose updated_loop_closure = loop_closure;
+    updated_loop_closure.T_a_b = convertTransformationMatrixToSE3(icp_solution);
+    loop_closures_.push_back(updated_loop_closure);
+  } else {
+    loop_closures_.push_back(loop_closure);
+  }
 }
 
 void LaserTrack::getLastPointCloud(DataPoints* out_point_cloud) const {
@@ -458,6 +486,67 @@ SE3 LaserTrack::convertTransformationMatrixToSE3(
       transformation_matrix.cast<double>().topLeftCorner<3,3>());
   SE3::Position position = transformation_matrix.cast<double>().topRightCorner<3,1>();
   return SE3(rotation, position);
+}
+
+std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
+    const curves::Time& time_ns) const {
+  bool found = false;
+  std::vector<LaserScan>::const_iterator it = laser_scans_.begin();
+  while (it != laser_scans_.end() && !found) {
+    if (it->time_ns == time_ns) {
+      found = true;
+    } else {
+      ++it;
+    }
+  }
+  if (it == laser_scans_.end()) {
+    CHECK(false) << "Could not find the scan.";
+  }
+  return it;
+}
+
+void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
+                                       DataPoints* sub_map_out) const {
+  CHECK_NOTNULL(sub_map_out);
+  const SE3 T_w_a = trajectory_.evaluate(time_ns);
+
+  std::vector<LaserScan>::const_iterator it = getIteratorToScanAtTime(time_ns);
+  DataPoints sub_map = it->scan;
+  std::vector<LaserScan>::const_iterator it_before = it;
+  std::vector<LaserScan>::const_iterator it_after = it;
+
+  PointMatcher::TransformationParameters transformation_matrix;
+
+  // Add the scans with decreasing time stamps.
+  bool reached_begin = false;
+  if (it_before != laser_scans_.begin()) {
+    for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+      if (!reached_begin) {
+        --it_before;
+        if (it_before == laser_scans_.begin()) {
+          reached_begin = true;
+        }
+        transformation_matrix = (T_w_a.inverse() *
+            trajectory_.evaluate(it_before->time_ns)).getTransformationMatrix().cast<float>();
+        correctTransformationMatrix(&transformation_matrix);
+        sub_map.concatenate(rigid_transformation_->compute(it_before->scan,transformation_matrix));
+      }
+    }
+  }
+
+  // Add the scans with increasing time stamps.
+  for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+    ++it_after;
+    if (it_after != laser_scans_.end()) {
+      transformation_matrix = (T_w_a.inverse() *
+          trajectory_.evaluate(it_after->time_ns)).getTransformationMatrix().cast<float>();
+      correctTransformationMatrix(&transformation_matrix);
+      sub_map.concatenate(rigid_transformation_->compute(it_after->scan,transformation_matrix));
+    }
+  }
+
+  //TODO move to?
+  *sub_map_out = sub_map;
 }
 
 } // namespace laser_slam

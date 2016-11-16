@@ -13,6 +13,8 @@ struct LaserTrackParams {
   int nscan_to_match;
   int nscan_in_sub_map;
   bool save_icp_results;
+  bool do_icp_step_on_loop_closures;
+  int loop_closures_sub_maps_radius;
 }; // struct LaserTrackParams
 
 struct OnlineEstimatorParams {

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>laser_slam_ros</name>
+  <version>0.0.1</version>
+  <description>laser_slam_ros</description>
+  
+  <author email="rdube@ethz.ch">Renaud Dubé</author>
+  <author email="dugasd@students.ethz.ch">Daniel Dugas</author>
+  
+  <maintainer email="rdube@ethz.ch">Renaud Dubé</maintainer>
+  
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+  
+  <depend>laser_slam</depend>
+  <depend>roscpp</depend>
+</package>
+

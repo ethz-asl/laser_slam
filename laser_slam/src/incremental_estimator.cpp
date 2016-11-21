@@ -9,7 +9,8 @@ namespace laser_slam {
 IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters) : params_(
     parameters), laser_track_(parameters.laser_track_params) {
   ISAM2Params isam2_params;
-  isam2_params.relinearizeSkip = 1;
+  isam2_params.setRelinearizeSkip(1);
+  isam2_params.setRelinearizeThreshold(0.001);
   isam2_ = ISAM2(isam2_params);
 
   // Create the loop closure noise model.
@@ -135,8 +136,12 @@ void IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& newFactor
                                     const gtsam::Values& newValues) {
   Clock clock;
 
-  isam2_.update(newFactors, newValues).print();;
-  Values result(isam2_.calculateEstimate());
+  // Update and force relinearization.
+  isam2_.update(newFactors, newValues,
+                std::vector<size_t>(),
+                boost::none, boost::none, boost::none, true).print();
+
+  Values result(isam2_.calculateBestEstimate());
 
   laser_track_.updateFromGTSAMValues(result);
 

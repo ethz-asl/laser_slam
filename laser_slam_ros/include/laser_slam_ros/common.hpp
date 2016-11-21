@@ -11,6 +11,7 @@ static laser_slam::LaserTrackParams getLaserTrackParams(const ros::NodeHandle& n
   const std::string ns = prefix + "/LaserTrack";
 
   std::vector<float> odometry_noise_model, icp_noise_model;
+  constexpr unsigned int kNoiseModelDimension = 6u;
   nh.getParam(ns + "/odometry_noise_model", odometry_noise_model);
   CHECK_EQ(odometry_noise_model.size(), kNoiseModelDimension);
   for (size_t i = 0u; i < 6u; ++i) {
@@ -35,9 +36,9 @@ static laser_slam::LaserTrackParams getLaserTrackParams(const ros::NodeHandle& n
   return params;
 }
 
-static laser_slam::OnlineEstimatorParams getOnlineEstimatorParams(const ros::NodeHandle& nh,
-                                                                  const std::string& prefix) {
-  laser_slam::OnlineEstimatorParams params;
+static laser_slam::EstimatorParams getOnlineEstimatorParams(const ros::NodeHandle& nh,
+                                                            const std::string& prefix) {
+  laser_slam::EstimatorParams params;
   const std::string ns = prefix + "/OnlineEstimator";
 
   std::vector<float>  loop_closure_noise_model;

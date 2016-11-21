@@ -585,6 +585,7 @@ std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
   if (it == laser_scans_.end()) {
     CHECK(false) << "Could not find the scan.";
   }
+  CHECK_EQ(time_ns, it->time_ns);
   return it;
 }
 

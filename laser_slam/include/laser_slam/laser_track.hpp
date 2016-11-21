@@ -112,8 +112,8 @@ class LaserTrack {
                              const unsigned int sub_maps_radius,
                              DataPoints* submap_out) const;
 
-  gtsam::Expression<SE3> getValueExpression(const curves::Time& time) const {
-    return trajectory_.getValueExpression(time);
+  gtsam::Expression<SE3> getValueExpression(const curves::Time& time_ns) const {
+    return trajectory_.getValueExpression(time_ns);
   };
 
  private:

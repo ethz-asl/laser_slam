@@ -137,11 +137,12 @@ void IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& newFactor
   Clock clock;
 
   // Update and force relinearization.
-  isam2_.update(newFactors, newValues,
-                std::vector<size_t>(),
-                boost::none, boost::none, boost::none, true).print();
+  isam2_.update(newFactors, newValues).print();
+  // TODO Investigate why these two subsequent update calls are needed.
+  isam2_.update();
+  isam2_.update();
 
-  Values result(isam2_.calculateBestEstimate());
+  Values result(isam2_.calculateEstimate());
 
   laser_track_.updateFromGTSAMValues(result);
 

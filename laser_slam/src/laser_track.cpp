@@ -30,6 +30,36 @@ LaserTrack::LaserTrack(const LaserTrackParams& parameters) : params_(parameters)
   // Create a rigid transformation.
   rigid_transformation_ = PointMatcher::get().REG(Transformation).create("RigidTransformation");
   CHECK_NOTNULL(rigid_transformation_);
+
+  // Create the noise models.
+  using namespace gtsam::noiseModel;
+  if (params_.add_m_estimator_on_odom) {
+    LOG(INFO) << "Creating odometry noise model with cauchy.";
+    odometry_noise_model_  = gtsam::noiseModel::Robust::Create(
+        gtsam::noiseModel::mEstimator::Cauchy::Create(1),
+        gtsam::noiseModel::Diagonal::Sigmas(params_.odometry_noise_model));
+  } else {
+    odometry_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(params_.odometry_noise_model);
+  }
+
+  if (params_.add_m_estimator_on_icp) {
+    LOG(INFO) << "Creating ICP noise model with cauchy.";
+    icp_noise_model_  = gtsam::noiseModel::Robust::Create(
+        gtsam::noiseModel::mEstimator::Cauchy::Create(1),
+        gtsam::noiseModel::Diagonal::Sigmas(params_.icp_noise_model));
+  } else {
+    icp_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(params_.icp_noise_model);
+  }
+
+  Eigen::Matrix<double,6,1> noise;
+  noise(0) = 0.0000001;
+  noise(1) = 0.0000001;
+  noise(2) = 0.0000001;
+  noise(3) = 0.0000001;
+  noise(4) = 0.0000001;
+  noise(5) = 0.0000001;
+
+  prior_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(noise);
 }
 
 void LaserTrack::processPose(const Pose& pose) {
@@ -85,41 +115,95 @@ void LaserTrack::processLaserScan(const LaserScan& in_scan) {
   laser_scans_.push_back(scan);
 }
 
-void LaserTrack::processLoopClosure(const RelativePose& loop_closure) {
-  CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_a_ns, trajectory_.getMinTime()) << "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_a_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_b_ns, trajectory_.getMinTime()) << "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_b_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
+void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
+                                         gtsam::NonlinearFactorGraph* newFactors,
+                                         gtsam::Values* newValues) {
+  LOG(INFO) << "LaserTrack::processPoseAndLaserScan called.";
 
-  if (params_.do_icp_step_on_loop_closures) {
-    // Get the initial guess.
-    PointMatcher::TransformationParameters initial_guess =
-        loop_closure.T_a_b.getTransformationMatrix().cast<float>();
-
-    // Create the sub maps.
-    Clock clock;
-    DataPoints sub_map_a;
-    DataPoints sub_map_b;
-    buildSubMapAroundTime(loop_closure.time_a_ns, &sub_map_a);
-    buildSubMapAroundTime(loop_closure.time_b_ns, &sub_map_b);
-    clock.takeTime();
-    LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
-
-    // Compute the ICP solution.
-    clock.start();
-    PointMatcher::TransformationParameters icp_solution = icp_.compute(sub_map_b, sub_map_a,
-                                                                       initial_guess);
-    clock.takeTime();
-    LOG(INFO) << "Took " << clock.getRealTime() <<
-        " ms to compute the icp_solution for the loop closure.";
-
-    RelativePose updated_loop_closure = loop_closure;
-    updated_loop_closure.T_a_b = convertTransformationMatrixToSE3(icp_solution);
-    loop_closures_.push_back(updated_loop_closure);
-  } else {
-    loop_closures_.push_back(loop_closure);
+  if (newFactors != NULL) {
+    //todo clear without failure.
+    CHECK(newFactors->empty());
   }
+  if (newValues != NULL) {
+    newValues->clear();
+  }
+
+  LaserScan scan = in_scan;
+
+  // Apply the input filters.
+  Clock clock;
+  input_filters_.apply(scan.scan);
+  clock.takeTime();
+  LOG(INFO) << "Took " << clock.getRealTime() << " ms to filter the input scan.";
+
+  // Save the pose measurement.
+  if (pose_measurements_.empty() && pose.time_ns != 0) {
+    LOG(WARNING) << "First pose had timestamp different than 0 (" << pose.time_ns << ".";
+  }
+  pose_measurements_.push_back(pose);
+
+  // Compute the relative pose measurement, extend the trajectory and
+  // compute the ICP transformations.
+  if (trajectory_.isEmpty()) {
+    scan.key = extendTrajectory(scan.time_ns, getPoseMeasurement(scan.time_ns));
+
+    // Update the pose key and save the scan.
+    setPoseKey(scan.time_ns, scan.key);
+    laser_scans_.push_back(scan);
+
+    LOG(INFO) << "Trajectory is empty. Pushing prior.";
+    if (newFactors != NULL) {
+      // Add a prior on the first key.
+      newFactors->push_back(makeMeasurementFactor(pose, prior_noise_model_));
+    }
+  } else {
+    // Evaluate the pose measurement at the last trajectory node.
+    SE3 last_pose_measurement = getPoseMeasurement(trajectory_.getMaxTime());
+
+    // Evaluate the pose measurement at the new trajectory node.
+    SE3 new_pose_measurement = getPoseMeasurement(scan.time_ns);
+
+    // Create the relative pose measurement.
+    RelativePose relative_measurement;
+    relative_measurement.T_a_b = last_pose_measurement.inverse()*new_pose_measurement;
+    relative_measurement.time_a_ns = trajectory_.getMaxTime();
+    relative_measurement.key_a = getPoseKey(trajectory_.getMaxTime());
+    relative_measurement.time_b_ns = scan.time_ns;
+
+    // Extend the trajectory with the new node position.
+    scan.key =  extendTrajectory(scan.time_ns, trajectory_.evaluate(trajectory_.getMaxTime()) *
+                                 relative_measurement.T_a_b);
+
+    // Update the pose key and save the scan.
+    setPoseKey(scan.time_ns, scan.key);
+    laser_scans_.push_back(scan);
+
+    // Complete and save the relative_measurement.
+    relative_measurement.key_b = scan.key;
+    odometry_measurements_.push_back(relative_measurement);
+
+    // Compute the ICP transformations.
+    if (params_.use_icp_factors) {
+      computeICPTransformations();
+    }
+
+    if (newFactors != NULL) {
+      // Add the odometry and ICP factors.
+      LOG(INFO) << "Pushing odometry factor.";
+      newFactors->push_back(makeRelativeMeasurementFactor(relative_measurement,
+                                                          odometry_noise_model_));
+      if (params_.use_icp_factors) {
+        LOG(INFO) << "Pushing icp factor icp_transformations_.size() " << icp_transformations_.size();
+        newFactors->push_back(makeRelativeMeasurementFactor(
+            icp_transformations_[icp_transformations_.size()-1u], icp_noise_model_));
+      }
+    }
+  }
+  if (newValues != NULL) {
+    LOG(INFO) << "Inserting new value.";
+    newValues->insert(scan.key, pose.T_w);
+  }
+  LOG(INFO) << "LaserTrack::processPoseAndLaserScan done.";
 }
 
 void LaserTrack::getLastPointCloud(DataPoints* out_point_cloud) const {
@@ -306,6 +390,13 @@ LaserTrack::makeRelativeMeasurementFactor(const RelativePose& relative_pose_meas
   }
 }
 
+gtsam::ExpressionFactor<SE3>
+LaserTrack::makeMeasurementFactor(const Pose& pose_measurement,
+                                  gtsam::noiseModel::Base::shared_ptr noise_model) const {
+  Expression<SE3> T_w(trajectory_.getValueExpression(pose_measurement.time_ns));
+  return ExpressionFactor<SE3>(noise_model,pose_measurement.T_w, T_w);
+}
+
 void LaserTrack::computeICPTransformations() {
   if (getNumScans() > 1u) {
     Clock clock;
@@ -480,14 +571,6 @@ Key LaserTrack::extendTrajectory(const Time& timestamp_ns, const SE3& value) {
   return keys[0];
 }
 
-SE3 LaserTrack::convertTransformationMatrixToSE3(
-    const PointMatcher::TransformationParameters& transformation_matrix) const {
-  SO3 rotation = SO3::constructAndRenormalize(
-      transformation_matrix.cast<double>().topLeftCorner<3,3>());
-  SE3::Position position = transformation_matrix.cast<double>().topRightCorner<3,1>();
-  return SE3(rotation, position);
-}
-
 std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
     const curves::Time& time_ns) const {
   bool found = false;
@@ -506,6 +589,7 @@ std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
 }
 
 void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
+                                       const unsigned int sub_maps_radius,
                                        DataPoints* sub_map_out) const {
   CHECK_NOTNULL(sub_map_out);
   const SE3 T_w_a = trajectory_.evaluate(time_ns);
@@ -520,7 +604,7 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
   // Add the scans with decreasing time stamps.
   bool reached_begin = false;
   if (it_before != laser_scans_.begin()) {
-    for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+    for (unsigned int i = 0u; i < sub_maps_radius; ++i) {
       if (!reached_begin) {
         --it_before;
         if (it_before == laser_scans_.begin()) {
@@ -535,7 +619,7 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
   }
 
   // Add the scans with increasing time stamps.
-  for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+  for (unsigned int i = 0u; i < sub_maps_radius; ++i) {
     ++it_after;
     if (it_after != laser_scans_.end()) {
       transformation_matrix = (T_w_a.inverse() *

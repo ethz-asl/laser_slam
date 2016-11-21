@@ -1,6 +1,7 @@
-#ifndef LASER_SLAM_SLIDING_WINDOW_ESTIMATOR_HPP_
-#define LASER_SLAM_SLIDING_WINDOW_ESTIMATOR_HPP_
+#ifndef LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_
+#define LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_
 
+#include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 
 #include "laser_slam/common.hpp"
@@ -10,26 +11,20 @@
 namespace laser_slam {
 
 /// \brief Sliding window estimator class.
-class SlidingWindowEstimator {
+class IncrementalEstimator {
 
  public:
-  SlidingWindowEstimator() {};
+  IncrementalEstimator() {};
   /// \brief Constructor.
-  explicit SlidingWindowEstimator(const EstimatorParams& parameters);
+  explicit IncrementalEstimator(const EstimatorParams& parameters);
 
-  ~SlidingWindowEstimator() {};
-
-  /// \brief Process a new pose measurement in world frame.
-  void processPose(const Pose& pose);
+  ~IncrementalEstimator() {};
 
   /// \brief Process a new laser scan in laser frame and call an optimization.
   void processPoseAndLaserScan(const Pose& pose, const LaserScan& scan);
 
   /// \brief Process a new loop closure.
   void processLoopClosure(const RelativePose& loop_closure);
-
-  /// \brief Process a vector of loop closure.
-  void processLoopClosures(const std::vector<RelativePose>& loop_closures);
 
   /// \brief Append the scans which are out of the sliding window estimation and
   /// fixed into world frame then clear the local copy.
@@ -51,36 +46,34 @@ class SlidingWindowEstimator {
     return laser_track_.findNearestPose(timestamp_ns);
   };
 
-
  private:
   // Build the factor graph and estimate the trajectory.
-  OptimizationResult buildProblemAndOptimize();
+  void estimate(const gtsam::NonlinearFactorGraph& newFactors,
+                const gtsam::Values& newValues);
 
   /// \brief Build the factor graph including loop closures and estimate the trajectory.
-  OptimizationResult buildLoopClosureProblemAndOptimize();
+  //OptimizationResult buildLoopClosureProblemAndOptimize();
 
   /// \brief Optimize the factor graph.
-  OptimizationResult optimize(const gtsam::NonlinearFactorGraph& factor_graph);
+  //OptimizationResult optimize(const gtsam::NonlinearFactorGraph& factor_graph);
 
   // Underlying laser track.
   LaserTrack laser_track_;
 
-  // Odometry noise model.
-  gtsam::noiseModel::Base::shared_ptr odometry_noise_model_;
-
-  // ICP noise model.
-  gtsam::noiseModel::Base::shared_ptr icp_noise_model_;
-
-  // Loop closure noise model
-  gtsam::noiseModel::Base::shared_ptr loop_closure_noise_model_;
-
   // Scans which are out of the sliding window estimation and fixed into world frame.
   std::vector<DataPoints> fixed_scans_;
 
+  gtsam::ISAM2 isam2_;
+
+  // ICP algorithm object.
+  PointMatcher::ICP icp_;
+
+  gtsam::noiseModel::Base::shared_ptr loop_closure_noise_model_;
+
   // Parameters.
   EstimatorParams params_;
-}; // SlidingWindowEstimator
+}; // IncrementalEstimator
 
 }  // namespace laser_slam
 
-#endif /* LASER_SLAM_SLIDING_WINDOW_ESTIMATOR_HPP_ */
+#endif /* LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_ */

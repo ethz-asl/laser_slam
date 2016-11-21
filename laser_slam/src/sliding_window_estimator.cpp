@@ -6,7 +6,7 @@ using namespace gtsam;
 
 namespace laser_slam {
 
-SlidingWindowEstimator::SlidingWindowEstimator(const OnlineEstimatorParams& parameters) :
+SlidingWindowEstimator::SlidingWindowEstimator(const EstimatorParams& parameters) :
     params_(parameters), laser_track_(parameters.laser_track_params) {
 
   // Create the noise models.

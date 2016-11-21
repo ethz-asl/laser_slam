@@ -30,8 +30,9 @@ class LaserTrack {
   /// \brief Process a new laser scan in laser frame.
   void processLaserScan(const LaserScan& scan);
 
-  /// \brief Process a new loop closure.
-  void processLoopClosure(const RelativePose& loop_closure);
+  void processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
+                               gtsam::NonlinearFactorGraph* newFactors = NULL,
+                               gtsam::Values* newValues = NULL);
 
   // Accessing the laser data
   /// \brief Get the point cloud of the last laser scan.
@@ -107,6 +108,14 @@ class LaserTrack {
   // TODO: Make obsolete?
   Pose findNearestPose(const Time& timestamp_ns) const;
 
+  void buildSubMapAroundTime(const curves::Time& time_ns,
+                             const unsigned int sub_maps_radius,
+                             DataPoints* submap_out) const;
+
+  gtsam::Expression<SE3> getValueExpression(const curves::Time& time) const {
+    return trajectory_.getValueExpression(time);
+  };
+
  private:
   typedef curves::DiscreteSE3Curve CurveType;
 
@@ -115,6 +124,11 @@ class LaserTrack {
   makeRelativeMeasurementFactor(const RelativePose& relative_pose_measurement,
                                 gtsam::noiseModel::Base::shared_ptr noise_model,
                                 const bool fix_first_node = false) const;
+
+  // Make a pose measurement factor.
+  gtsam::ExpressionFactor<SE3>
+  makeMeasurementFactor(const Pose& pose_measurement,
+                        gtsam::noiseModel::Base::shared_ptr noise_model) const;
 
   // Compute rigid ICP transformations according to the selected strategy.
   void computeICPTransformations();
@@ -146,14 +160,8 @@ class LaserTrack {
   // TODO(Renaud): Move this to curves.
   Key extendTrajectory(const Time& timestamp_ns, const SE3& value);
 
-  // Convert a libpointmatcher transformation matrix to a minkindr SE3.
-  SE3 convertTransformationMatrixToSE3(
-      const PointMatcher::TransformationParameters& transformation_matrix) const;
-
   std::vector<LaserScan>::const_iterator getIteratorToScanAtTime(
       const curves::Time& time_ns) const;
-
-  void buildSubMapAroundTime(const curves::Time& time_ns, DataPoints* submap_out) const;
 
   // TODO move pose_measurements_ to the Trajectory type.
   // Pose measurements in world frame.
@@ -185,6 +193,11 @@ class LaserTrack {
 
   // Libpointmatcher rigid transformation.
   PointMatcher::Transformation* rigid_transformation_;
+
+  // Noise models.
+  gtsam::noiseModel::Base::shared_ptr prior_noise_model_;
+  gtsam::noiseModel::Base::shared_ptr odometry_noise_model_;
+  gtsam::noiseModel::Base::shared_ptr icp_noise_model_;
 
   // Parameters.
   LaserTrackParams params_;

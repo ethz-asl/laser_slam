@@ -3,11 +3,21 @@ project(laser_slam_ros)
 
 add_definitions(-std=c++11)
 
-find_package(catkin_simple 0.1.0 REQUIRED)
+find_package(catkin_simple 0.1.0 REQUIRED COMPONENTS
+    roscpp
+    rospy
+    std_msgs
+    genmsg
+    tf
+    rosbag
+    visualization_msgs
+)
 
 catkin_simple(ALL_DEPS_REQUIRED)
 
-#add_doxygen(NOT_AUTOMATIC)
+cs_add_library(${PROJECT_NAME} 
+    src/laser_slam_worker.cpp
+)
 
 cs_install()
 cs_export()

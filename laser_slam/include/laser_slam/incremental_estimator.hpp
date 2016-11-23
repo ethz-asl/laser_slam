@@ -16,49 +16,40 @@ class IncrementalEstimator {
  public:
   IncrementalEstimator() {};
   /// \brief Constructor.
-  explicit IncrementalEstimator(const EstimatorParams& parameters);
+  explicit IncrementalEstimator(const EstimatorParams& parameters,
+                                unsigned int n_laser_slam_workers);
 
   ~IncrementalEstimator() {};
-
-  /// \brief Process a new laser scan in laser frame and call an optimization.
-  void processPoseAndLaserScan(const Pose& pose, const LaserScan& scan);
 
   /// \brief Process a new loop closure.
   void processLoopClosure(const RelativePose& loop_closure);
 
-  /// \brief Append the scans which are out of the sliding window estimation and
-  /// fixed into world frame then clear the local copy.
-  void appendFixedScans(DataPoints* out_point_cloud);
-
+  // TODO remove these functions. Can be done by the LaserSlamWorker.
   /// \brief Get the trajectory.
-  void getTrajectory(Trajectory* out_trajectory) const;
+  void getTrajectory(Trajectory* out_trajectory,
+                     unsigned int laser_track_id = 1u) const;
 
   /// \brief Get the trajectory based only on odometry data.
-  void getOdometryTrajectory(Trajectory* out_trajectory) const;
+  void getOdometryTrajectory(Trajectory* out_trajectory,
+                             unsigned int laser_track_id = 1u) const;
 
   /// \brief Get the current estimate.
-  Pose getCurrentPose() const { return laser_track_.getCurrentPose(); };
-
-  /// \brief Get the position covariances.
-  void getCovariances(std::vector<Covariance>* out_covariances) const;
-
-  Pose findNearestPose(const Time& timestamp_ns) const {
-    return laser_track_.findNearestPose(timestamp_ns);
+  Pose getCurrentPose(unsigned int laser_track_id) const {
+    // TODO rm -1.
+    return laser_tracks_[laser_track_id - 1]->getCurrentPose();
   };
 
- private:
+  std::shared_ptr<LaserTrack> getLaserTrack(unsigned int laser_track_id);
+
   // Build the factor graph and estimate the trajectory.
-  void estimate(const gtsam::NonlinearFactorGraph& newFactors,
-                const gtsam::Values& newValues);
+  gtsam::Values estimate(const gtsam::NonlinearFactorGraph& new_factors,
+                         const gtsam::Values& new_values);
 
-  /// \brief Build the factor graph including loop closures and estimate the trajectory.
-  //OptimizationResult buildLoopClosureProblemAndOptimize();
+ private:
+  unsigned int n_laser_slam_workers_;
 
-  /// \brief Optimize the factor graph.
-  //OptimizationResult optimize(const gtsam::NonlinearFactorGraph& factor_graph);
-
-  // Underlying laser track.
-  LaserTrack laser_track_;
+  // Underlying laser tracks.
+  std::vector<std::shared_ptr<LaserTrack> > laser_tracks_;
 
   // Scans which are out of the sliding window estimation and fixed into world frame.
   std::vector<DataPoints> fixed_scans_;

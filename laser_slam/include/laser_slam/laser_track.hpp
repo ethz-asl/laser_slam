@@ -20,7 +20,7 @@ class LaserTrack {
   LaserTrack() {};
 
   /// \brief Constructor.
-  explicit LaserTrack(const LaserTrackParams& parameters);
+  explicit LaserTrack(const LaserTrackParams& parameters, unsigned int laser_track_id);
 
   ~LaserTrack() {};
 
@@ -162,6 +162,8 @@ class LaserTrack {
 
   std::vector<LaserScan>::const_iterator getIteratorToScanAtTime(
       const curves::Time& time_ns) const;
+
+  unsigned int laser_track_id_;
 
   // TODO move pose_measurements_ to the Trajectory type.
   // Pose measurements in world frame.

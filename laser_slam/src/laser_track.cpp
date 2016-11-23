@@ -7,7 +7,9 @@ using namespace curves;
 
 namespace laser_slam {
 
-LaserTrack::LaserTrack(const LaserTrackParams& parameters) : params_(parameters) {
+LaserTrack::LaserTrack(const LaserTrackParams& parameters,
+                       unsigned int laser_track_id) : params_(parameters),
+                           laser_track_id_(laser_track_id) {
   // Load the ICP configurations.
   std::ifstream ifs_icp_configurations(params_.icp_configuration_file.c_str());
   if (ifs_icp_configurations.good()) {
@@ -119,6 +121,10 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
                                          gtsam::NonlinearFactorGraph* newFactors,
                                          gtsam::Values* newValues) {
   LOG(INFO) << "LaserTrack::processPoseAndLaserScan called.";
+  if (pose.time_ns != in_scan.time_ns) {
+    LOG(WARNING) << "The time of the pose to add (" << pose.time_ns << ") does not match the " <<
+        "time of the scan to add (" << in_scan.time_ns << ").";
+  }
 
   if (newFactors != NULL) {
     //todo clear without failure.

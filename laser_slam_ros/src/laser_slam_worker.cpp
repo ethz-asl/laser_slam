@@ -4,6 +4,7 @@
 #include <Eigen/Eigenvalues>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <laser_slam/common.hpp>
 #include <laser_slam_ros/common.hpp>
 #include <laser_slam_ros/laser_slam_worker.hpp>
@@ -37,44 +38,54 @@ LaserSlamWorker::LaserSlamWorker() { }
 LaserSlamWorker::~LaserSlamWorker() { }
 
 void LaserSlamWorker::init(ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
+                           unsigned int worker_id,
                            laser_slam::IncrementalEstimator* incremental_estimator,
                            std::mutex* incremental_estimator_mutex) {
   params_ = params;
   incremental_estimator_ = incremental_estimator;
   incremental_estimator_mutex_ = incremental_estimator_mutex;
+  worker_id_ = worker_id;
+
+  // Get the LaserTrack object from the IncrementalEstimator.
+  incremental_estimator_mutex_->lock();
+  laser_track_ = incremental_estimator_->getLaserTrack(worker_id);
+  incremental_estimator_mutex_->unlock();
+
   // Setup subscriber.
-   scan_sub_ = nh.subscribe(params_.assembled_cloud_sub_topic, kScanSubscriberMessageQueueSize,
-                             &LaserSlamWorker::scanCallback, this);
+  scan_sub_ = nh.subscribe(params_.assembled_cloud_sub_topic, kScanSubscriberMessageQueueSize,
+                           &LaserSlamWorker::scanCallback, this);
 
-   // Setup publishers.
-   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
-                                                   kPublisherQueueSize, true);
+  // Setup publishers.
+  trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
+                                                 kPublisherQueueSize, true);
 
-   if (params_.publish_local_map) {
-     local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
-                                                              kPublisherQueueSize);
-   }
+  if (params_.publish_local_map) {
+    local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
+                                                            kPublisherQueueSize);
+  }
 
-   voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
-                             params_.voxel_size_m);
-   voxel_filter_.setMinimumPointsNumberPerVoxel(params_.minimum_point_number_per_voxel);
+  voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
+                            params_.voxel_size_m);
+  voxel_filter_.setMinimumPointsNumberPerVoxel(params_.minimum_point_number_per_voxel);
 
-   // TODO reactivate or rm.
-   //  odometry_trajectory_pub_ = nh_.advertise<nav_msgs::Path>(params_.odometry_trajectory_pub_topic,
-   //
-   //  if (params_.publish_distant_map) {
-   //    distant_map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(params_.distant_map_pub_topic,
-   //                                                               kPublisherQueueSize);
-   //  }
-   //  if (params_.publish_full_map) {
-   //    point_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(params_.full_map_pub_topic,
-   //                                                               kPublisherQueueSize);
-   //  }
-   //  new_fixed_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("new_fixed_cloud",
-   //                                                               kPublisherQueueSize);
+  // TODO reactivate or rm.
+  //  odometry_trajectory_pub_ = nh_.advertise<nav_msgs::Path>(params_.odometry_trajectory_pub_topic,
+  //
+  //  if (params_.publish_distant_map) {
+  //    distant_map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(params_.distant_map_pub_topic,
+  //                                                               kPublisherQueueSize);
+  //  }
+  //  if (params_.publish_full_map) {
+  //    point_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(params_.full_map_pub_topic,
+  //                                                               kPublisherQueueSize);
+  //  }
+  //  new_fixed_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("new_fixed_cloud",
+  //                                                               kPublisherQueueSize);
 }
 
 void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in) {
+  LOG(INFO) << "Received cloud getting transform from " << params_.odom_frame <<
+      " to " << params_.sensor_frame;
   if (tf_listener_.waitForTransform(params_.odom_frame, params_.sensor_frame,
                                     cloud_msg_in.header.stamp, ros::Duration(kTimeout_s))) {
     // Get the tf transform.
@@ -104,10 +115,19 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       new_scan.scan = PointMatcher_ros::rosMsgToPointMatcherCloud<float>(cloud_msg_in);
       new_scan.time_ns = rosTimeToCurveTime(cloud_msg_in.header.stamp.toNSec());
 
-      // Process the pose and the laser scan.
+      // Process the new scan and get new values and factors.
+      gtsam::NonlinearFactorGraph new_factors;
+      gtsam::Values new_values;
+      laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
+                                            &new_factors, &new_values);
+
+      // Process the new values and factors.
       incremental_estimator_mutex_->lock();
-      incremental_estimator_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan);
+      gtsam::Values result = incremental_estimator_->estimate(new_factors, new_values);
       incremental_estimator_mutex_->unlock();
+
+      // Update the trajectory.
+      laser_track_->updateFromGTSAMValues(result);
 
       // Adjust the correction between the world and odom frames.
       //      incremental_estimator_mutex_->lock();
@@ -131,11 +151,10 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
       publishTrajectories();
 
-      // Publish the local scans which are completely estimated and static.
-      laser_slam::DataPoints new_fixed_cloud;
-      incremental_estimator_mutex_->lock();
-      incremental_estimator_->appendFixedScans(&new_fixed_cloud);
-      incremental_estimator_mutex_->unlock();
+      // Get the last cloud in world frame.
+      DataPoints new_fixed_cloud;
+      laser_track_->getLocalCloudInWorldFrame(laser_track_->getMaxTime(), &new_fixed_cloud);
+
 
       // Transform the cloud in sensor frame
       //TODO(Renaud) move to a transformPointCloud() fct.
@@ -220,11 +239,11 @@ void LaserSlamWorker::publishMap() {
     source_cloud_ready_mutex_.unlock();
 
     //maximumNumberPointsFilter(&filtered_map);
-//    if (params_.publish_full_map) {
-//      sensor_msgs::PointCloud2 msg;
-//      convert_to_point_cloud_2_msg(filtered_map, params_.world_frame, &msg);
-//      point_cloud_pub_.publish(msg);
-//    }
+    //    if (params_.publish_full_map) {
+    //      sensor_msgs::PointCloud2 msg;
+    //      convert_to_point_cloud_2_msg(filtered_map, params_.world_frame, &msg);
+    //      point_cloud_pub_.publish(msg);
+    //    }
     if (params_.publish_local_map) {
       sensor_msgs::PointCloud2 msg;
       local_map_filtered_mutex_.lock();
@@ -232,13 +251,13 @@ void LaserSlamWorker::publishMap() {
       local_map_pub_.publish(msg);
       local_map_filtered_mutex_.unlock();
     }
-//    if (params_.publish_distant_map) {
-//      distant_map_mutex_.lock();
-//      sensor_msgs::PointCloud2 msg;
-//      convert_to_point_cloud_2_msg(distant_map_, params_.world_frame, &msg);
-//      distant_map_pub_.publish(msg);
-//      distant_map_mutex_.unlock();
-//    }
+    //    if (params_.publish_distant_map) {
+    //      distant_map_mutex_.lock();
+    //      sensor_msgs::PointCloud2 msg;
+    //      convert_to_point_cloud_2_msg(distant_map_, params_.world_frame, &msg);
+    //      distant_map_pub_.publish(msg);
+    //      distant_map_mutex_.unlock();
+    //    }
   }
 }
 
@@ -248,10 +267,10 @@ void LaserSlamWorker::publishTrajectories() {
   incremental_estimator_->getTrajectory(&trajectory);
   incremental_estimator_mutex_->unlock();
   publishTrajectory(trajectory, trajectory_pub_);
-//  incremental_estimator_mutex_->lock();
-//  incremental_estimator_->getOdometryTrajectory(&trajectory);
-//  incremental_estimator_mutex_->unlock();
-//  publishTrajectory(trajectory, odometry_trajectory_pub_);
+  //  incremental_estimator_mutex_->lock();
+  //  incremental_estimator_->getOdometryTrajectory(&trajectory);
+  //  incremental_estimator_mutex_->unlock();
+  //  publishTrajectory(trajectory, odometry_trajectory_pub_);
 }
 
 // TODO can we move?
@@ -286,7 +305,7 @@ Time LaserSlamWorker::curveTimeToRosTime(const Time& timestamp_ns) const {
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   incremental_estimator_mutex_->lock();
-  laser_slam::Pose current_pose = incremental_estimator_->getCurrentPose();
+  laser_slam::Pose current_pose = laser_track_->getCurrentPose();
   incremental_estimator_mutex_->unlock();
 
   PclPoint current_position;

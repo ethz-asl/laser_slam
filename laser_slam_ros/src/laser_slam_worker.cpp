@@ -68,6 +68,15 @@ void LaserSlamWorker::init(ros::NodeHandle& nh, const LaserSlamWorkerParams& par
                             params_.voxel_size_m);
   voxel_filter_.setMinimumPointsNumberPerVoxel(params_.minimum_point_number_per_voxel);
 
+  // Set the first world to odom transform.
+  Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> matrix;
+  matrix.resize(4, 4);
+  matrix = Eigen::Matrix<float, 4,4>::Identity();
+  world_to_odom_mutex_.lock();
+  world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
+      matrix, params_.world_frame, params_.odom_frame, ros::Time::now());
+  world_to_odom_mutex_.unlock();
+
   // TODO reactivate or rm.
   //  odometry_trajectory_pub_ = nh_.advertise<nav_msgs::Path>(params_.odometry_trajectory_pub_topic,
   //
@@ -130,24 +139,21 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       laser_track_->updateFromGTSAMValues(result);
 
       // Adjust the correction between the world and odom frames.
-      //      incremental_estimator_mutex_->lock();
-      //      Pose current_pose = incremental_estimator_->getCurrentPose();
-      //      incremental_estimator_mutex_->unlock();
-      //
-      //      SE3 T_odom_sensor = tfTransformToPose(tf_transform).T_w;
-      //      SE3 T_w_sensor = current_pose.T_w;
-      //      SE3 T_w_odom = T_w_sensor * T_odom_sensor.inverse();
-      //
-      //      Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> matrix;
-      //      // TODO resize needed?
-      //      matrix.resize(4, 4);
-      //      matrix = T_w_odom.getTransformationMatrix().cast<float>();
-      //
-      //      world_to_odom_mutex_.lock();
-      //      world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
-      //          matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
-      //      tf_broadcaster_.sendTransform(world_to_odom_);
-      //      world_to_odom_mutex_.unlock();
+      Pose current_pose = laser_track_->getCurrentPose();
+      SE3 T_odom_sensor = tfTransformToPose(tf_transform).T_w;
+      SE3 T_w_sensor = current_pose.T_w;
+      SE3 T_w_odom = T_w_sensor * T_odom_sensor.inverse();
+
+      Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> matrix;
+
+      // TODO resize needed?
+      matrix.resize(4, 4);
+      matrix = T_w_odom.getTransformationMatrix().cast<float>();
+
+      world_to_odom_mutex_.lock();
+      world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
+          matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
+      world_to_odom_mutex_.unlock();
 
       publishTrajectories();
 
@@ -229,6 +235,7 @@ void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
 }
 
 void LaserSlamWorker::publishMap() {
+  // TODO make thread safe.
   if (local_map_.size() > 0) {
     PointCloud filtered_map;
     getFilteredMap(&filtered_map);
@@ -263,9 +270,7 @@ void LaserSlamWorker::publishMap() {
 
 void LaserSlamWorker::publishTrajectories() {
   Trajectory trajectory;
-  incremental_estimator_mutex_->lock();
-  incremental_estimator_->getTrajectory(&trajectory);
-  incremental_estimator_mutex_->unlock();
+  laser_track_->getTrajectory(&trajectory);
   publishTrajectory(trajectory, trajectory_pub_);
   //  incremental_estimator_mutex_->lock();
   //  incremental_estimator_->getOdometryTrajectory(&trajectory);
@@ -391,6 +396,13 @@ void LaserSlamWorker::clearLocalMap() {
   local_map_mutex_.lock();
   local_map_.clear();
   local_map_mutex_.unlock();
+}
+
+tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
+  world_to_odom_mutex_.lock();
+  tf::StampedTransform world_to_odom = world_to_odom_;
+  world_to_odom_mutex_.unlock();
+  return world_to_odom;
 }
 
 } // namespace laser_slam_ros

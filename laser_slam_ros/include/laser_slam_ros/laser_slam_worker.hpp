@@ -43,6 +43,8 @@ class LaserSlamWorker {
 
   void clearLocalMap();
 
+  tf::StampedTransform getWorldToOdom();
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);
@@ -116,6 +118,9 @@ class LaserSlamWorker {
   // Indicates whether a new source cloud is ready for localization or loop-closure.
   bool source_cloud_ready_ = false;
   std::mutex source_cloud_ready_mutex_;
+
+  tf::StampedTransform world_to_odom_;
+  std::mutex world_to_odom_mutex_;
 
   static constexpr double kTimeout_s = 0.2;
   static constexpr unsigned int kScanSubscriberMessageQueueSize = 1u;

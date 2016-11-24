@@ -22,8 +22,9 @@ class LaserSlamWorker {
   LaserSlamWorker();
   ~LaserSlamWorker();
 
-  void init(ros::NodeHandle& nh, const LaserSlamWorkerParams& params, unsigned int worker_id,
-            std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator);
+  void init(ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
+            std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator,
+            unsigned int worker_id = 0u);
 
   /// \brief Register the local scans to the sliding window estimator.
   void scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in);

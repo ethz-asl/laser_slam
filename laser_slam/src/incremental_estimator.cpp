@@ -17,7 +17,7 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
   isam2_ = ISAM2(isam2_params);
 
   // Create the laser tracks.
-  for (size_t i = 1u; i <= n_laser_slam_workers_; ++i) {
+  for (size_t i = 0u; i < n_laser_slam_workers_; ++i) {
     std::shared_ptr<LaserTrack> laser_track(new LaserTrack(parameters.laser_track_params, i));
     laser_tracks_.push_back(std::move(laser_track));
   }
@@ -108,15 +108,17 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,
                                          unsigned int laser_track_id) const {
   std::lock_guard<std::mutex> lock(full_class_mutex_);
-  //TODO fix the substraction.
-  laser_tracks_[laser_track_id - 1u]->getTrajectory(out_trajectory);
+  CHECK_GE(laser_track_id, 0u);
+  CHECK_LT(laser_track_id, laser_tracks_.size());
+  laser_tracks_[laser_track_id]->getTrajectory(out_trajectory);
 }
 
 void IncrementalEstimator::getOdometryTrajectory(Trajectory* out_trajectory,
                                                  unsigned int laser_track_id) const {
   std::lock_guard<std::mutex> lock(full_class_mutex_);
-  //TODO fix the substraction.
-  laser_tracks_[laser_track_id - 1u]->getOdometryTrajectory(out_trajectory);
+  CHECK_GE(laser_track_id, 0u);
+  CHECK_LT(laser_track_id, laser_tracks_.size());
+  laser_tracks_[laser_track_id]->getOdometryTrajectory(out_trajectory);
 }
 
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
@@ -138,9 +140,9 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 
 std::shared_ptr<LaserTrack> IncrementalEstimator::getLaserTrack(unsigned int laser_track_id) {
   std::lock_guard<std::mutex> lock(full_class_mutex_);
-  CHECK_LE(laser_track_id, laser_tracks_.size());
-  //TODO fix the substraction.
-  return laser_tracks_[laser_track_id - 1u];
+  CHECK_GE(laser_track_id, 0u);
+  CHECK_LT(laser_track_id, laser_tracks_.size());
+  return laser_tracks_[laser_track_id];
 }
 
 } // namespace laser_slam

@@ -21,7 +21,7 @@ class LaserTrack {
   LaserTrack() {};
 
   /// \brief Constructor.
-  explicit LaserTrack(const LaserTrackParams& parameters, unsigned int laser_track_id);
+  explicit LaserTrack(const LaserTrackParams& parameters, unsigned int laser_track_id = 0u);
 
   ~LaserTrack() {};
 

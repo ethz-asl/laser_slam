@@ -106,6 +106,8 @@ struct RelativePose {
   Key key_a;
   /// \brief Posterior node key.
   Key key_b;
+  unsigned int track_id_a;
+  unsigned int track_id_b;
 };
 
 /// \brief LaserScan type including point cloud and time stamp.

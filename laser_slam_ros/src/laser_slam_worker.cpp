@@ -38,8 +38,9 @@ LaserSlamWorker::LaserSlamWorker() { }
 LaserSlamWorker::~LaserSlamWorker() { }
 
 void LaserSlamWorker::init(
-    ros::NodeHandle& nh, const LaserSlamWorkerParams& params, unsigned int worker_id,
-    std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator) {
+    ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
+    std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator,
+    unsigned int worker_id) {
   params_ = params;
   incremental_estimator_ = incremental_estimator;
   worker_id_ = worker_id;

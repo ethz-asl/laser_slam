@@ -164,7 +164,7 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
     if (newFactors != NULL) {
       Pose new_pose = pose;
       // Add a prior on the first key.
-      if (laser_track_id_ == 2u) {
+      if (laser_track_id_ == 1u) {
         SE3 offset_transform(SE3::Rotation(1.0, 0.0, 0.0, 0.0), SE3::Position(25.0, 0.0, 0.0));
         new_pose.T_w = offset_transform * new_pose.T_w;
       }

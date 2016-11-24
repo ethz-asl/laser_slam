@@ -29,17 +29,16 @@ class IncrementalEstimator {
   // TODO remove these functions. Can be done by the LaserSlamWorker.
   /// \brief Get the trajectory.
   void getTrajectory(Trajectory* out_trajectory,
-                     unsigned int laser_track_id = 1u) const;
+                     unsigned int laser_track_id = 0u) const;
 
   /// \brief Get the trajectory based only on odometry data.
   void getOdometryTrajectory(Trajectory* out_trajectory,
-                             unsigned int laser_track_id = 1u) const;
+                             unsigned int laser_track_id = 0u) const;
 
   /// \brief Get the current estimate.
   Pose getCurrentPose(unsigned int laser_track_id) const {
     std::lock_guard<std::mutex> lock(full_class_mutex_);
-    // TODO rm -1.
-    return laser_tracks_[laser_track_id - 1u]->getCurrentPose();
+    return laser_tracks_[laser_track_id]->getCurrentPose();
   };
 
   std::shared_ptr<LaserTrack> getLaserTrack(unsigned int laser_track_id);

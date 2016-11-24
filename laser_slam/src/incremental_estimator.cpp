@@ -50,13 +50,13 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
   std::lock_guard<std::mutex> lock(full_class_mutex_);
   CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_a_ns, laser_tracks_[0]->getMinTime()) <<
+  CHECK_GE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMinTime()) <<
       "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_a_ns, laser_tracks_[0]->getMaxTime()) <<
+  CHECK_LE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMaxTime()) <<
       "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_b_ns, laser_tracks_[0]->getMinTime()) <<
+  CHECK_GE(loop_closure.time_b_ns, laser_tracks_[loop_closure.track_id_b]->getMinTime()) <<
       "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_b_ns, laser_tracks_[0]->getMaxTime()) <<
+  CHECK_LE(loop_closure.time_b_ns, laser_tracks_[loop_closure.track_id_b]->getMaxTime()) <<
       "Loop closure has invalid time.";
 
   // Apply an ICP step if desired.
@@ -70,10 +70,10 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
     Clock clock;
     DataPoints sub_map_a;
     DataPoints sub_map_b;
-    laser_tracks_[0]->buildSubMapAroundTime(loop_closure.time_a_ns,
-                                            params_.loop_closures_sub_maps_radius, &sub_map_a);
-    laser_tracks_[0]->buildSubMapAroundTime(loop_closure.time_b_ns,
-                                            params_.loop_closures_sub_maps_radius, &sub_map_b);
+    laser_tracks_[loop_closure.track_id_a]->buildSubMapAroundTime(
+        loop_closure.time_a_ns, params_.loop_closures_sub_maps_radius, &sub_map_a);
+    laser_tracks_[loop_closure.track_id_b]->buildSubMapAroundTime(
+        loop_closure.time_b_ns, params_.loop_closures_sub_maps_radius, &sub_map_b);
     clock.takeTime();
     LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
 
@@ -90,8 +90,10 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 
   // Create the loop closure factor.
   NonlinearFactorGraph new_factors;
-  Expression<SE3> T_w_b(laser_tracks_[0]->getValueExpression(updated_loop_closure.time_b_ns));
-  Expression<SE3> T_w_a(laser_tracks_[0]->getValueExpression(updated_loop_closure.time_a_ns));
+  Expression<SE3> T_w_b(laser_tracks_[loop_closure.track_id_b]->getValueExpression(
+      updated_loop_closure.time_b_ns));
+  Expression<SE3> T_w_a(laser_tracks_[loop_closure.track_id_a]->getValueExpression(
+      updated_loop_closure.time_a_ns));
   Expression<SE3> T_a_w(kindr::minimal::inverse(T_w_a));
   Expression<SE3> relative(kindr::minimal::compose(T_a_w, T_w_b));
   ExpressionFactor<SE3> new_factor(loop_closure_noise_model_, updated_loop_closure.T_a_b,
@@ -101,8 +103,11 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   // Estimate the graph.
   Values new_values;
   Values result = estimate(new_factors, new_values);
-  // TODO ensure threadsafe.
-  laser_tracks_[0]->updateFromGTSAMValues(result);
+
+  // Update tracks
+  for (auto& track: laser_tracks_) {
+    track->updateFromGTSAMValues(result);
+  }
 }
 
 void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,

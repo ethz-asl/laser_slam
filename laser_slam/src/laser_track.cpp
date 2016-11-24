@@ -65,6 +65,7 @@ LaserTrack::LaserTrack(const LaserTrackParams& parameters,
 }
 
 void LaserTrack::processPose(const Pose& pose) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   if (pose_measurements_.empty() && pose.time_ns != 0) {
     LOG(WARNING) << "First pose had timestamp different than 0 (" << pose.time_ns << ".";
   }
@@ -72,6 +73,7 @@ void LaserTrack::processPose(const Pose& pose) {
 }
 
 void LaserTrack::processLaserScan(const LaserScan& in_scan) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   LaserScan scan = in_scan;
 
   // Apply the input filters.
@@ -120,6 +122,7 @@ void LaserTrack::processLaserScan(const LaserScan& in_scan) {
 void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
                                          gtsam::NonlinearFactorGraph* newFactors,
                                          gtsam::Values* newValues) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   LOG(INFO) << "LaserTrack::processPoseAndLaserScan called.";
   if (pose.time_ns != in_scan.time_ns) {
     LOG(WARNING) << "The time of the pose to add (" << pose.time_ns << ") does not match the " <<
@@ -159,8 +162,13 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
 
     LOG(INFO) << "Trajectory is empty. Pushing prior.";
     if (newFactors != NULL) {
+      Pose new_pose = pose;
       // Add a prior on the first key.
-      newFactors->push_back(makeMeasurementFactor(pose, prior_noise_model_));
+      if (laser_track_id_ == 2u) {
+        SE3 offset_transform(SE3::Rotation(1.0, 0.0, 0.0, 0.0), SE3::Position(25.0, 0.0, 0.0));
+        new_pose.T_w = offset_transform * new_pose.T_w;
+      }
+      newFactors->push_back(makeMeasurementFactor(new_pose, prior_noise_model_));
     }
   } else {
     // Evaluate the pose measurement at the last trajectory node.
@@ -213,12 +221,14 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
 }
 
 void LaserTrack::getLastPointCloud(DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
   // todo
 }
 
 void LaserTrack::getPointCloudOfTimeInterval(const std::pair<Time, Time>& times_ns,
                                              DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
   *out_point_cloud = DataPoints();
   // todo
@@ -226,6 +236,7 @@ void LaserTrack::getPointCloudOfTimeInterval(const std::pair<Time, Time>& times_
 
 void LaserTrack::getLocalCloudInWorldFrame(const Time& timestamp_ns,
                                            DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
 
   // Find an iterator to the local scan.
@@ -245,6 +256,7 @@ void LaserTrack::getLocalCloudInWorldFrame(const Time& timestamp_ns,
 }
 
 void LaserTrack::getTrajectory(Trajectory* trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(trajectory)->clear();
 
   std::vector<Time> trajectory_times_ns;
@@ -256,11 +268,13 @@ void LaserTrack::getTrajectory(Trajectory* trajectory) const {
 }
 
 void LaserTrack::getCovariances(std::vector<Covariance>* out_covariances) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_covariances)->clear();
   *out_covariances = covariances_;
 }
 
 Pose LaserTrack::getCurrentPose() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   Pose current_pose;
   current_pose.time_ns = getMaxTime();
   current_pose.T_w = trajectory_.evaluate(current_pose.time_ns);
@@ -268,6 +282,7 @@ Pose LaserTrack::getCurrentPose() const {
 }
 
 void LaserTrack::getOdometryTrajectory(Trajectory* trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(trajectory)->clear();
   for (const auto& pose: pose_measurements_) {
     trajectory->emplace(pose.time_ns, pose.T_w);
@@ -275,14 +290,17 @@ void LaserTrack::getOdometryTrajectory(Trajectory* trajectory) const {
 }
 
 Time LaserTrack::getMinTime() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   return trajectory_.getMinTime();
 }
 
 Time LaserTrack::getMaxTime() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   return trajectory_.getMaxTime();
 }
 
 void LaserTrack::getLaserScansTimes(std::vector<curves::Time>* out_times_ns) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_times_ns)->clear();
   for (size_t i = 0u; i < laser_scans_.size(); ++i) {
     out_times_ns->push_back(laser_scans_[i].time_ns);
@@ -290,6 +308,7 @@ void LaserTrack::getLaserScansTimes(std::vector<curves::Time>* out_times_ns) con
 }
 
 void LaserTrack::appendPriorFactors(const Time& prior_time_ns, NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   trajectory_.addPriorFactors(graph, prior_time_ns);
@@ -299,6 +318,7 @@ void LaserTrack::appendOdometryFactors(const curves::Time& optimization_min_time
                                        const curves::Time& optimization_max_time_ns,
                                        noiseModel::Base::shared_ptr noise_model,
                                        NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   //TODO(Renaud): this can be optimized but let's see when we fix issue #27.
@@ -314,6 +334,7 @@ void LaserTrack::appendICPFactors(const curves::Time& optimization_min_time_ns,
                                   const curves::Time& optimization_max_time_ns,
                                   noiseModel::Base::shared_ptr noise_model,
                                   NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   for (size_t i = 0u; i < icp_transformations_.size(); ++i) {
@@ -338,6 +359,7 @@ void LaserTrack::appendLoopClosureFactors(const curves::Time& optimization_min_t
                                           const curves::Time& optimization_max_time_ns,
                                           noiseModel::Base::shared_ptr noise_model,
                                           NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   for (size_t i = 0u; i < loop_closures_.size(); ++i) {
@@ -358,15 +380,18 @@ void LaserTrack::appendLoopClosureFactors(const curves::Time& optimization_min_t
 }
 
 void LaserTrack::initializeGTSAMValues(const KeySet& keys, Values* values) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   trajectory_.initializeGTSAMValues(keys, values);
 }
 
 void LaserTrack::updateFromGTSAMValues(const Values& values) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   trajectory_.updateFromGTSAMValues(values);
 }
 
 void LaserTrack::updateCovariancesFromGTSAMValues(const gtsam::NonlinearFactorGraph& factor_graph,
                                                   const gtsam::Values& values) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   gtsam::KeySet keys = factor_graph.keys();
   gtsam::Marginals marginals(factor_graph, values);
   for (const auto& key: keys) {
@@ -552,6 +577,7 @@ Pose LaserTrack::findPose(const Time& timestamp_ns) const {
 }
 
 Pose LaserTrack::findNearestPose(const Time& timestamp_ns) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK(!pose_measurements_.empty()) << "Cannot find nearest pose as no pose was registered.";
   CHECK_LE(timestamp_ns, pose_measurements_.back().time_ns) << "The requested time ("
       << timestamp_ns << ") is later than the latest pose time. Latest pose time is "
@@ -598,6 +624,7 @@ std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
 void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
                                        const unsigned int sub_maps_radius,
                                        DataPoints* sub_map_out) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(sub_map_out);
   const SE3 T_w_a = trajectory_.evaluate(time_ns);
 

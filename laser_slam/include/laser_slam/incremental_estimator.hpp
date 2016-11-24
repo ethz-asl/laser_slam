@@ -1,6 +1,8 @@
 #ifndef LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_
 #define LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_
 
+#include <mutex>
+
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 
@@ -35,8 +37,9 @@ class IncrementalEstimator {
 
   /// \brief Get the current estimate.
   Pose getCurrentPose(unsigned int laser_track_id) const {
+    std::lock_guard<std::mutex> lock(full_class_mutex_);
     // TODO rm -1.
-    return laser_tracks_[laser_track_id - 1]->getCurrentPose();
+    return laser_tracks_[laser_track_id - 1u]->getCurrentPose();
   };
 
   std::shared_ptr<LaserTrack> getLaserTrack(unsigned int laser_track_id);
@@ -47,6 +50,8 @@ class IncrementalEstimator {
 
  private:
   unsigned int n_laser_slam_workers_;
+
+  mutable std::mutex full_class_mutex_;
 
   // Underlying laser tracks.
   std::vector<std::shared_ptr<LaserTrack> > laser_tracks_;

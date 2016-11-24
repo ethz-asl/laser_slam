@@ -37,19 +37,15 @@ LaserSlamWorker::LaserSlamWorker() { }
 
 LaserSlamWorker::~LaserSlamWorker() { }
 
-void LaserSlamWorker::init(ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
-                           unsigned int worker_id,
-                           laser_slam::IncrementalEstimator* incremental_estimator,
-                           std::mutex* incremental_estimator_mutex) {
+void LaserSlamWorker::init(
+    ros::NodeHandle& nh, const LaserSlamWorkerParams& params, unsigned int worker_id,
+    std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator) {
   params_ = params;
   incremental_estimator_ = incremental_estimator;
-  incremental_estimator_mutex_ = incremental_estimator_mutex;
   worker_id_ = worker_id;
 
   // Get the LaserTrack object from the IncrementalEstimator.
-  incremental_estimator_mutex_->lock();
   laser_track_ = incremental_estimator_->getLaserTrack(worker_id);
-  incremental_estimator_mutex_->unlock();
 
   // Setup subscriber.
   scan_sub_ = nh.subscribe(params_.assembled_cloud_sub_topic, kScanSubscriberMessageQueueSize,
@@ -131,9 +127,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
                                             &new_factors, &new_values);
 
       // Process the new values and factors.
-      incremental_estimator_mutex_->lock();
       gtsam::Values result = incremental_estimator_->estimate(new_factors, new_values);
-      incremental_estimator_mutex_->unlock();
 
       // Update the trajectory.
       laser_track_->updateFromGTSAMValues(result);
@@ -309,9 +303,7 @@ Time LaserSlamWorker::curveTimeToRosTime(const Time& timestamp_ns) const {
 
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
-  incremental_estimator_mutex_->lock();
   laser_slam::Pose current_pose = laser_track_->getCurrentPose();
-  incremental_estimator_mutex_->unlock();
 
   PclPoint current_position;
   current_position.x = current_pose.T_w.getPosition()[0];

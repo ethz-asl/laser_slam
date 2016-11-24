@@ -48,6 +48,7 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 }
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
+  std::lock_guard<std::mutex> lock(full_class_mutex_);
   CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
   CHECK_GE(loop_closure.time_a_ns, laser_tracks_[0]->getMinTime()) <<
       "Loop closure has invalid time.";
@@ -106,18 +107,21 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 
 void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,
                                          unsigned int laser_track_id) const {
+  std::lock_guard<std::mutex> lock(full_class_mutex_);
   //TODO fix the substraction.
   laser_tracks_[laser_track_id - 1u]->getTrajectory(out_trajectory);
 }
 
 void IncrementalEstimator::getOdometryTrajectory(Trajectory* out_trajectory,
                                                  unsigned int laser_track_id) const {
+  std::lock_guard<std::mutex> lock(full_class_mutex_);
   //TODO fix the substraction.
   laser_tracks_[laser_track_id - 1u]->getOdometryTrajectory(out_trajectory);
 }
 
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
                                       const gtsam::Values& new_values) {
+  std::lock_guard<std::mutex> lock(full_class_mutex_);
   Clock clock;
   // Update and force relinearization.
   isam2_.update(new_factors, new_values).print();
@@ -133,6 +137,7 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 }
 
 std::shared_ptr<LaserTrack> IncrementalEstimator::getLaserTrack(unsigned int laser_track_id) {
+  std::lock_guard<std::mutex> lock(full_class_mutex_);
   CHECK_LE(laser_track_id, laser_tracks_.size());
   //TODO fix the substraction.
   return laser_tracks_[laser_track_id - 1u];

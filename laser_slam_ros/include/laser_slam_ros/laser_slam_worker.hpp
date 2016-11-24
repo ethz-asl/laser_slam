@@ -23,8 +23,7 @@ class LaserSlamWorker {
   ~LaserSlamWorker();
 
   void init(ros::NodeHandle& nh, const LaserSlamWorkerParams& params, unsigned int worker_id,
-            laser_slam::IncrementalEstimator* incremental_estimator,
-            std::mutex* incremental_estimator_mutex);
+            std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator);
 
   /// \brief Register the local scans to the sliding window estimator.
   void scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in);
@@ -87,9 +86,8 @@ class LaserSlamWorker {
 
   tf::TransformListener tf_listener_;
 
-  // Pointers to the incremental estimator.
-  laser_slam::IncrementalEstimator* incremental_estimator_;
-  std::mutex* incremental_estimator_mutex_;
+  // Pointer to the incremental estimator.
+  std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator_;
 
   // Contains the map which is estimated by the sliding window.
   segmatch::PointCloud local_map_;

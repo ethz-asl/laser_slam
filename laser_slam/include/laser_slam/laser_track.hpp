@@ -2,6 +2,7 @@
 #define LASER_SLAM_LASER_TRACK_HPP_
 
 #include <iostream>
+#include <mutex>
 
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/ExpressionFactor.h>
@@ -99,10 +100,16 @@ class LaserTrack {
                                         const gtsam::Values& values);
 
   /// \brief Get the number of registered laser scans.
-  size_t getNumScans() const { return laser_scans_.size(); };
+  size_t getNumScans() {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return laser_scans_.size();
+  };
 
   /// \brief Print the underlying trajectory -- only for debugging.
-  void printTrajectory() const { trajectory_.print("Laser track trajectory"); };
+  void printTrajectory() {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    trajectory_.print("Laser track trajectory");
+  };
 
   // Find nearest pose to a givent time.
   // TODO: Make obsolete?
@@ -112,7 +119,8 @@ class LaserTrack {
                              const unsigned int sub_maps_radius,
                              DataPoints* submap_out) const;
 
-  gtsam::Expression<SE3> getValueExpression(const curves::Time& time_ns) const {
+  gtsam::Expression<SE3> getValueExpression(const curves::Time& time_ns) {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
     return trajectory_.getValueExpression(time_ns);
   };
 
@@ -183,6 +191,9 @@ class LaserTrack {
 
   // Underlying trajectory.
   CurveType trajectory_;
+
+  // TODO replace by standard mutex?
+  mutable std::recursive_mutex full_laser_track_mutex_;
 
   // Covariance matrices.
   std::vector<Covariance> covariances_;

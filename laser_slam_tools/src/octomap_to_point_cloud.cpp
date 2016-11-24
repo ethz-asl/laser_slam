@@ -8,7 +8,7 @@
 std::string getFileExtension(const std::string& filename) {
   const size_t pos = filename.rfind('.');
   CHECK_NE(pos, std::string::npos) << "File path " << filename << " does not contain '.'";
-  return filename.substr(pos + 1);
+  return filename.substr(pos + 1u);
 }
 
 int main(int argc, char** argv) {
@@ -18,12 +18,12 @@ int main(int argc, char** argv) {
   const std::string output_file(argv[2]);
 
   octomap::OcTree octree(octomap_file);
-  CHECK_NE(octree.size(), 0) << "Failed to load Octomap from: " << octomap_file << ".";
+  CHECK_NE(octree.size(), 0u) << "Failed to load Octomap from: " << octomap_file << ".";
 
   pcl::PointCloud<pcl::PointXYZ> cloud;
+  pcl::PointXYZ point;
   for (auto it = octree.begin_leafs(); it != octree.end_leafs(); ++it) {
     if (octree.isNodeOccupied(*it)) {
-      pcl::PointXYZ point;
       point.x = it.getX();
       point.y = it.getY();
       point.z = it.getZ();

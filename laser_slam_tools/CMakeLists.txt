@@ -11,7 +11,7 @@ catkin_simple(ALL_DEPS_REQUIRED)
 
 catkin_package()
 
-cs_add_executable(octomap_to_point_cloud src/octomap_to_point_cloud.cc)
+cs_add_executable(octomap_to_point_cloud src/octomap_to_point_cloud.cpp)
 
 cs_install()
 cs_export()

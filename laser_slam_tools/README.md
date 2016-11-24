@@ -2,7 +2,6 @@ laser_slam_tools
 ==================
 
 Useful tools to support laser mapping.
-Requires [point_coud_io](https://github.com/ethz-asl/point_cloud_io.git)
 Requires [volumetric_mapping](https://github.com/ethz-asl/volumetric_mapping.git)
 
 ## laser_to_octomap

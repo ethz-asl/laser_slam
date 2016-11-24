@@ -48,3 +48,6 @@
 - git: 
    local-name: volumetric_mapping
    uri: https://github.com/ethz-asl/volumetric_mapping.git
+- git:
+   local-name: pcl_catkin
+   uri: https://github.com/ethz-asl/pcl_catkin.git

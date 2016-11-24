@@ -17,4 +17,4 @@ Possible arguments are:
 ## octomap_to_point_cloud
 Saves occupied leaf nodes of octomap as point cloud.
 Supported output file formats are .pcd and .ply.
-Usage: `rosrun laser_slam_tools octomap_to_point_cloud input_file_path output_file_path
+Usage: `rosrun laser_slam_tools octomap_to_point_cloud input_file_path output_file_path`

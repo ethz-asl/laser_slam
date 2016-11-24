@@ -37,7 +37,7 @@ class IncrementalEstimator {
 
   /// \brief Get the current estimate.
   Pose getCurrentPose(unsigned int laser_track_id) const {
-    std::lock_guard<std::mutex> lock(full_class_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
     return laser_tracks_[laser_track_id]->getCurrentPose();
   };
 
@@ -50,7 +50,8 @@ class IncrementalEstimator {
  private:
   unsigned int n_laser_slam_workers_;
 
-  mutable std::mutex full_class_mutex_;
+  // TODO replace by standard mutex?
+  mutable std::recursive_mutex full_class_mutex_;
 
   // Underlying laser tracks.
   std::vector<std::shared_ptr<LaserTrack> > laser_tracks_;

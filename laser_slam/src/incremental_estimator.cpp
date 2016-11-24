@@ -48,7 +48,7 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 }
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
-  std::lock_guard<std::mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
   CHECK_GE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMinTime()) <<
       "Loop closure has invalid time.";
@@ -66,7 +66,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
     PointMatcher::TransformationParameters initial_guess =
         loop_closure.T_a_b.getTransformationMatrix().cast<float>();
 
-    // Create the sub maps.
+    LOG(INFO) << "Creating the submaps for loop closure ICP.";
     Clock clock;
     DataPoints sub_map_a;
     DataPoints sub_map_b;
@@ -77,7 +77,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
     clock.takeTime();
     LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
 
-    // Compute the ICP solution.
+    LOG(INFO) << "Creating loop closure ICP.";
     clock.start();
     PointMatcher::TransformationParameters icp_solution = icp_.compute(sub_map_b, sub_map_a,
                                                                        initial_guess);
@@ -88,7 +88,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
     updated_loop_closure.T_a_b = convertTransformationMatrixToSE3(icp_solution);
   }
 
-  // Create the loop closure factor.
+  LOG(INFO) << "Creating loop closure factor.";
   NonlinearFactorGraph new_factors;
   Expression<SE3> T_w_b(laser_tracks_[loop_closure.track_id_b]->getValueExpression(
       updated_loop_closure.time_b_ns));
@@ -100,11 +100,11 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
                                    relative);
   new_factors.push_back(new_factor);
 
-  // Estimate the graph.
+  LOG(INFO) << "Estimating the trajectories.";
   Values new_values;
   Values result = estimate(new_factors, new_values);
 
-  // Update tracks
+  LOG(INFO) << "Updating the trajectories.";
   for (auto& track: laser_tracks_) {
     track->updateFromGTSAMValues(result);
   }
@@ -112,7 +112,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 
 void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,
                                          unsigned int laser_track_id) const {
-  std::lock_guard<std::mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_GE(laser_track_id, 0u);
   CHECK_LT(laser_track_id, laser_tracks_.size());
   laser_tracks_[laser_track_id]->getTrajectory(out_trajectory);
@@ -120,7 +120,7 @@ void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,
 
 void IncrementalEstimator::getOdometryTrajectory(Trajectory* out_trajectory,
                                                  unsigned int laser_track_id) const {
-  std::lock_guard<std::mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_GE(laser_track_id, 0u);
   CHECK_LT(laser_track_id, laser_tracks_.size());
   laser_tracks_[laser_track_id]->getOdometryTrajectory(out_trajectory);
@@ -128,7 +128,7 @@ void IncrementalEstimator::getOdometryTrajectory(Trajectory* out_trajectory,
 
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
                                       const gtsam::Values& new_values) {
-  std::lock_guard<std::mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Clock clock;
   // Update and force relinearization.
   isam2_.update(new_factors, new_values).print();
@@ -144,7 +144,7 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 }
 
 std::shared_ptr<LaserTrack> IncrementalEstimator::getLaserTrack(unsigned int laser_track_id) {
-  std::lock_guard<std::mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_GE(laser_track_id, 0u);
   CHECK_LT(laser_track_id, laser_tracks_.size());
   return laser_tracks_[laser_track_id];

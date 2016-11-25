@@ -111,22 +111,6 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   LOG(INFO) << "Updating the trajectories after LC done.";
 }
 
-void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,
-                                         unsigned int laser_track_id) const {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  CHECK_GE(laser_track_id, 0u);
-  CHECK_LT(laser_track_id, laser_tracks_.size());
-  laser_tracks_[laser_track_id]->getTrajectory(out_trajectory);
-}
-
-void IncrementalEstimator::getOdometryTrajectory(Trajectory* out_trajectory,
-                                                 unsigned int laser_track_id) const {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  CHECK_GE(laser_track_id, 0u);
-  CHECK_LT(laser_track_id, laser_tracks_.size());
-  laser_tracks_[laser_track_id]->getOdometryTrajectory(out_trajectory);
-}
-
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
                                       const gtsam::Values& new_values) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);

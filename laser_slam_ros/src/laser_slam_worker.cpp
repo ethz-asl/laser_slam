@@ -382,4 +382,14 @@ tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
   return world_to_odom;
 }
 
+void LaserSlamWorker::getTrajectory(Trajectory* out_trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  laser_track_->getTrajectory(out_trajectory);
+}
+
+void LaserSlamWorker::getOdometryTrajectory(Trajectory* out_trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  laser_track_->getOdometryTrajectory(out_trajectory);
+}
+
 } // namespace laser_slam_ros

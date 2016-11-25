@@ -26,15 +26,6 @@ class IncrementalEstimator {
   /// \brief Process a new loop closure.
   void processLoopClosure(const RelativePose& loop_closure);
 
-  // TODO remove these functions. Can be done by the LaserSlamWorker.
-  /// \brief Get the trajectory.
-  void getTrajectory(Trajectory* out_trajectory,
-                     unsigned int laser_track_id = 0u) const;
-
-  /// \brief Get the trajectory based only on odometry data.
-  void getOdometryTrajectory(Trajectory* out_trajectory,
-                             unsigned int laser_track_id = 0u) const;
-
   /// \brief Get the current estimate.
   Pose getCurrentPose(unsigned int laser_track_id) const {
     std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);

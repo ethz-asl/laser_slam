@@ -45,6 +45,10 @@ class LaserSlamWorker {
 
   tf::StampedTransform getWorldToOdom();
 
+  void getTrajectory(laser_slam::Trajectory* out_trajectory) const;
+
+  void getOdometryTrajectory(laser_slam::Trajectory* out_trajectory) const;
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);

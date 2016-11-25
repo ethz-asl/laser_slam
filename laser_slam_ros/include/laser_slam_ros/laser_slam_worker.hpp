@@ -95,16 +95,13 @@ class LaserSlamWorker {
 
   // Contains the map which is estimated by the sliding window.
   segmatch::PointCloud local_map_;
-  std::mutex local_map_mutex_;
 
   segmatch::PointCloud local_map_filtered_;
-  std::mutex local_map_filtered_mutex_;
 
   // Contains the map which is distant from sensor and assumed to be fixed.
   // If the robot revisits the same environment, the distant_map_and local_map_ will be one
   // above each other, each with same density.
   segmatch::PointCloud distant_map_;
-  std::mutex distant_map_mutex_;
 
   // Timestamp to be subtracted to each measurement time so that the trajectory starts at time 0.
   laser_slam::Time base_time_ns_ = 0;
@@ -119,10 +116,8 @@ class LaserSlamWorker {
 
   // Indicates whether a new source cloud is ready for localization or loop-closure.
   bool source_cloud_ready_ = false;
-  std::mutex source_cloud_ready_mutex_;
 
   tf::StampedTransform world_to_odom_;
-  std::mutex world_to_odom_mutex_;
 
   static constexpr double kTimeout_s = 0.2;
   static constexpr unsigned int kScanSubscriberMessageQueueSize = 1u;

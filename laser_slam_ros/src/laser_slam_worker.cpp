@@ -70,10 +70,8 @@ void LaserSlamWorker::init(
   Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> matrix;
   matrix.resize(4, 4);
   matrix = Eigen::Matrix<float, 4,4>::Identity();
-  world_to_odom_mutex_.lock();
   world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
       matrix, params_.world_frame, params_.odom_frame, ros::Time::now());
-  world_to_odom_mutex_.unlock();
 
   // TODO reactivate or rm.
   //  odometry_trajectory_pub_ = nh_.advertise<nav_msgs::Path>(params_.odometry_trajectory_pub_topic,
@@ -149,10 +147,8 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       matrix.resize(4, 4);
       matrix = T_w_odom.getTransformationMatrix().cast<float>();
 
-      world_to_odom_mutex_.lock();
       world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
           matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
-      world_to_odom_mutex_.unlock();
 
       publishTrajectories();
 
@@ -186,7 +182,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       // Add the local scans to the full point cloud.
       if (params_.create_filtered_map) {
         if (new_fixed_cloud_pcl.size() > 0u) {
-          local_map_mutex_.lock();
           if (local_map_.size() > 0u) {
             local_map_ += new_fixed_cloud_pcl;
             ROS_INFO_STREAM("Adding new fixed cloud to the local map now with size " <<
@@ -195,7 +190,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
             ROS_INFO("Creating a new local map from the fixed cloud.");
             local_map_ = new_fixed_cloud_pcl;
           }
-          local_map_mutex_.unlock();
         }
       }
 
@@ -242,9 +236,7 @@ void LaserSlamWorker::publishMap() {
     getFilteredMap(&filtered_map);
 
     // Indicate that a new source cloud is ready to be used for localization and loop-closure.
-    source_cloud_ready_mutex_.lock();
     source_cloud_ready_ = true;
-    source_cloud_ready_mutex_.unlock();
 
     //maximumNumberPointsFilter(&filtered_map);
     //    if (params_.publish_full_map) {
@@ -254,17 +246,13 @@ void LaserSlamWorker::publishMap() {
     //    }
     if (params_.publish_local_map) {
       sensor_msgs::PointCloud2 msg;
-      local_map_filtered_mutex_.lock();
       convert_to_point_cloud_2_msg(local_map_filtered_, params_.world_frame, &msg);
       local_map_pub_.publish(msg);
-      local_map_filtered_mutex_.unlock();
     }
     //    if (params_.publish_distant_map) {
-    //      distant_map_mutex_.lock();
     //      sensor_msgs::PointCloud2 msg;
     //      convert_to_point_cloud_2_msg(distant_map_, params_.world_frame, &msg);
     //      distant_map_pub_.publish(msg);
-    //      distant_map_mutex_.unlock();
     //    }
   }
 }
@@ -274,9 +262,7 @@ void LaserSlamWorker::publishTrajectories() {
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
   publishTrajectory(trajectory, trajectory_pub_);
-  //  incremental_estimator_mutex_->lock();
   //  incremental_estimator_->getOdometryTrajectory(&trajectory);
-  //  incremental_estimator_mutex_->unlock();
   //  publishTrajectory(trajectory, odometry_trajectory_pub_);
 }
 
@@ -319,11 +305,9 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   current_position.z = current_pose.T_w.getPosition()[2];
 
   // Apply the cylindrical filter on the local map and get a copy.
-  local_map_mutex_.lock();
   PointCloud local_map = local_map_;
   applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                          40, false, &local_map_);
-  local_map_mutex_.unlock();
 
   // Apply a voxel filter.
   laser_slam::Clock clock;
@@ -359,12 +343,9 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, true, &new_distant_map);
 
-    local_map_filtered_mutex_.lock();
     local_map_filtered_ = local_map_filtered;
-    local_map_filtered_mutex_.unlock();
 
     // Add the new_distant_map to the distant_map_.
-    distant_map_mutex_.lock();
     if (distant_map_.size() > 0u) {
       distant_map_ += new_distant_map;
     } else {
@@ -373,7 +354,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
 
     *filtered_map = local_map_filtered;
     *filtered_map += distant_map_;
-    distant_map_mutex_.unlock();
 
     clock.takeTime();
     // LOG(INFO) << "new_local_map.size() " << local_map.size();
@@ -388,23 +368,17 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
 void LaserSlamWorker::getLocalMapFiltered(segmatch::PointCloud* local_map_filtered) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_NOTNULL(local_map_filtered);
-  local_map_filtered_mutex_.lock();
   *local_map_filtered = local_map_filtered_;
-  local_map_filtered_mutex_.unlock();
 }
 
 void LaserSlamWorker::clearLocalMap() {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  local_map_mutex_.lock();
   local_map_.clear();
-  local_map_mutex_.unlock();
 }
 
 tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  world_to_odom_mutex_.lock();
   tf::StampedTransform world_to_odom = world_to_odom_;
-  world_to_odom_mutex_.unlock();
   return world_to_odom;
 }
 

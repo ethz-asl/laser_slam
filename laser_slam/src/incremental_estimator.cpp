@@ -104,10 +104,11 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   Values new_values;
   Values result = estimate(new_factors, new_values);
 
-  LOG(INFO) << "Updating the trajectories.";
+  LOG(INFO) << "Updating the trajectories after LC.";
   for (auto& track: laser_tracks_) {
     track->updateFromGTSAMValues(result);
   }
+  LOG(INFO) << "Updating the trajectories after LC done.";
 }
 
 void IncrementalEstimator::getTrajectory(Trajectory* out_trajectory,

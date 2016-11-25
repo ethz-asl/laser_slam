@@ -41,6 +41,7 @@ void LaserSlamWorker::init(
     ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
     std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator,
     unsigned int worker_id) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   params_ = params;
   incremental_estimator_ = incremental_estimator;
   worker_id_ = worker_id;
@@ -90,6 +91,7 @@ void LaserSlamWorker::init(
 }
 
 void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   LOG(INFO) << "Received cloud getting transform from " << params_.odom_frame <<
       " to " << params_.sensor_frame;
   if (tf_listener_.waitForTransform(params_.odom_frame, params_.sensor_frame,
@@ -131,7 +133,9 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       gtsam::Values result = incremental_estimator_->estimate(new_factors, new_values);
 
       // Update the trajectory.
+      LOG(INFO) << "worker_id_ " << worker_id_ << " is updating the laser track";
       laser_track_->updateFromGTSAMValues(result);
+      LOG(INFO) << "worker_id_ " << worker_id_ << " is done updating the laser track";
 
       // Adjust the correction between the world and odom frames.
       Pose current_pose = laser_track_->getCurrentPose();
@@ -206,6 +210,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
 void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
                                         const ros::Publisher& publisher) const {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   nav_msgs::Path traj_msg;
   traj_msg.header.frame_id = params_.world_frame;
   Time traj_time = curveTimeToRosTime(trajectory.rbegin()->first);
@@ -230,6 +235,7 @@ void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
 }
 
 void LaserSlamWorker::publishMap() {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   // TODO make thread safe.
   if (local_map_.size() > 0) {
     PointCloud filtered_map;
@@ -264,6 +270,7 @@ void LaserSlamWorker::publishMap() {
 }
 
 void LaserSlamWorker::publishTrajectories() {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
   publishTrajectory(trajectory, trajectory_pub_);
@@ -379,6 +386,7 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
 }
 
 void LaserSlamWorker::getLocalMapFiltered(segmatch::PointCloud* local_map_filtered) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_NOTNULL(local_map_filtered);
   local_map_filtered_mutex_.lock();
   *local_map_filtered = local_map_filtered_;
@@ -386,12 +394,14 @@ void LaserSlamWorker::getLocalMapFiltered(segmatch::PointCloud* local_map_filter
 }
 
 void LaserSlamWorker::clearLocalMap() {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   local_map_mutex_.lock();
   local_map_.clear();
   local_map_mutex_.unlock();
 }
 
 tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   world_to_odom_mutex_.lock();
   tf::StampedTransform world_to_odom = world_to_odom_;
   world_to_odom_mutex_.unlock();

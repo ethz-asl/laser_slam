@@ -74,6 +74,9 @@ class LaserSlamWorker {
   // TODO make laser_track mutex safe (when loop closures are added).
   std::shared_ptr<laser_slam::LaserTrack> laser_track_;
 
+  // TODO use standard mutex?
+  mutable std::recursive_mutex full_class_mutex_;
+
   // Subscribers.
   ros::Subscriber scan_sub_;
 

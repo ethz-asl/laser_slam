@@ -625,6 +625,8 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
                                        const unsigned int sub_maps_radius,
                                        DataPoints* sub_map_out) const {
   std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+  LOG(INFO) << "buildSubMapAroundTime " << time_ns << " for track " <<
+      laser_track_id_;
   CHECK_NOTNULL(sub_map_out);
   const SE3 T_w_a = trajectory_.evaluate(time_ns);
 
@@ -653,13 +655,16 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
   }
 
   // Add the scans with increasing time stamps.
+  bool reached_end = false;
   for (unsigned int i = 0u; i < sub_maps_radius; ++i) {
     ++it_after;
-    if (it_after != laser_scans_.end()) {
+    if (it_after != laser_scans_.end() && !reached_end) {
       transformation_matrix = (T_w_a.inverse() *
           trajectory_.evaluate(it_after->time_ns)).getTransformationMatrix().cast<float>();
       correctTransformationMatrix(&transformation_matrix);
       sub_map.concatenate(rigid_transformation_->compute(it_after->scan,transformation_matrix));
+    } else {
+      reached_end = true;
     }
   }
 

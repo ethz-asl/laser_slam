@@ -33,7 +33,8 @@ class LaserTrack {
 
   void processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
                                gtsam::NonlinearFactorGraph* newFactors = NULL,
-                               gtsam::Values* newValues = NULL);
+                               gtsam::Values* newValues = NULL,
+                               bool* is_prior = NULL);
 
   // Accessing the laser data
   /// \brief Get the point cloud of the last laser scan.

@@ -124,11 +124,17 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       // Process the new scan and get new values and factors.
       gtsam::NonlinearFactorGraph new_factors;
       gtsam::Values new_values;
+      bool is_prior;
       laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
-                                            &new_factors, &new_values);
+                                            &new_factors, &new_values, &is_prior);
 
       // Process the new values and factors.
-      gtsam::Values result = incremental_estimator_->estimate(new_factors, new_values);
+      gtsam::Values result;
+      if (is_prior) {
+        result = incremental_estimator_->registerPrior(new_factors, new_values, worker_id_);
+      } else {
+        result = incremental_estimator_->estimate(new_factors, new_values);
+      }
 
       // Update the trajectory.
       LOG(INFO) << "worker_id_ " << worker_id_ << " is updating the laser track";

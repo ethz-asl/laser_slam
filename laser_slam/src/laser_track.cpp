@@ -121,7 +121,8 @@ void LaserTrack::processLaserScan(const LaserScan& in_scan) {
 
 void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
                                          gtsam::NonlinearFactorGraph* newFactors,
-                                         gtsam::Values* newValues) {
+                                         gtsam::Values* newValues,
+                                         bool* is_prior) {
   std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   LOG(INFO) << "LaserTrack::processPoseAndLaserScan called.";
   if (pose.time_ns != in_scan.time_ns) {
@@ -170,6 +171,9 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
       }
       newFactors->push_back(makeMeasurementFactor(new_pose, prior_noise_model_));
     }
+    if (is_prior != NULL) {
+      *is_prior = true;
+    }
   } else {
     // Evaluate the pose measurement at the last trajectory node.
     SE3 last_pose_measurement = getPoseMeasurement(trajectory_.getMaxTime());
@@ -212,11 +216,16 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
             icp_transformations_[icp_transformations_.size()-1u], icp_noise_model_));
       }
     }
+    if (is_prior != NULL) {
+      *is_prior = false;
+    }
   }
+
   if (newValues != NULL) {
     LOG(INFO) << "Inserting new value.";
     newValues->insert(scan.key, pose.T_w);
   }
+
   LOG(INFO) << "LaserTrack::processPoseAndLaserScan done.";
 }
 

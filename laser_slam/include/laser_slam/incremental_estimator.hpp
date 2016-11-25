@@ -38,6 +38,13 @@ class IncrementalEstimator {
   gtsam::Values estimate(const gtsam::NonlinearFactorGraph& new_factors,
                          const gtsam::Values& new_values);
 
+  gtsam::Values estimateAndRemove(const gtsam::NonlinearFactorGraph& new_factors,
+                                  const gtsam::Values& new_values);
+
+  gtsam::Values registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
+                              const gtsam::Values& new_values,
+                              const unsigned int worker_id);
+
  private:
   unsigned int n_laser_slam_workers_;
 
@@ -56,6 +63,8 @@ class IncrementalEstimator {
   PointMatcher::ICP icp_;
 
   gtsam::noiseModel::Base::shared_ptr loop_closure_noise_model_;
+
+  size_t factor_indice_to_remove_;
 
   // Parameters.
   EstimatorParams params_;

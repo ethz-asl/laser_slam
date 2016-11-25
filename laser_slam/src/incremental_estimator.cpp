@@ -102,7 +102,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 
   LOG(INFO) << "Estimating the trajectories.";
   Values new_values;
-  Values result = estimate(new_factors, new_values);
+  Values result = estimateAndRemove(new_factors, new_values);
 
   LOG(INFO) << "Updating the trajectories after LC.";
   for (auto& track: laser_tracks_) {
@@ -125,6 +125,43 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  return result;
+}
+
+Values IncrementalEstimator::estimateAndRemove(
+    const gtsam::NonlinearFactorGraph& new_factors,
+    const gtsam::Values& new_values) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  Clock clock;
+  // Update and force relinearization.
+  std::vector<size_t> factor_indices_to_remove;
+  factor_indices_to_remove.push_back(factor_indice_to_remove_);
+  isam2_.update(new_factors, new_values, factor_indices_to_remove).print();
+  // TODO Investigate why these two subsequent update calls are needed.
+  isam2_.update();
+  isam2_.update();
+
+  Values result(isam2_.calculateEstimate());
+
+  clock.takeTime();
+  LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  return result;
+}
+
+gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
+                                                  const gtsam::Values& new_values,
+                                                  const unsigned int worker_id) {
+
+  ISAM2Result update_result = isam2_.update(new_factors, new_values);
+
+  CHECK_EQ(update_result.newFactorsIndices.size(), 1u);
+  if (worker_id == 1) {
+    factor_indice_to_remove_ = update_result.newFactorsIndices.at(0u);
+  }
+  // TODO Investigate why these two subsequent update calls are needed.
+  isam2_.update();
+  isam2_.update();
+  Values result(isam2_.calculateEstimate());
   return result;
 }
 

@@ -8,6 +8,7 @@ find_package(catkin_simple 0.1.0 REQUIRED COMPONENTS
     rospy
     std_msgs
     genmsg
+    message_generation
     tf
     rosbag
     visualization_msgs

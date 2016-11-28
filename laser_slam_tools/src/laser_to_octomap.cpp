@@ -2,7 +2,7 @@
 
 #include <ros/ros.h>
 
-#include <laser_mapper/GetLaserTrack.h>
+#include <laser_slam_ros/GetLaserTrackSrv.h>
 #include <octomap_world/octomap_manager.h>
 
 int main(int argc, char** argv) {
@@ -52,8 +52,8 @@ int main(int argc, char** argv) {
 
   // Get laser track.
   ros::ServiceClient client;
-  client = nh.serviceClient<laser_mapper::GetLaserTrack>("/laser_mapper/get_laser_track");
-  laser_mapper::GetLaserTrack call;
+  client = nh.serviceClient<laser_slam_ros::GetLaserTrackSrv>("/laser_mapper/get_laser_track");
+  laser_slam_ros::GetLaserTrackSrv call;
   ROS_INFO("Requested laser track. Waiting...");
   if (!client.call(call)) {
     ROS_ERROR("Client call failed");

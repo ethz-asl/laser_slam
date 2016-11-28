@@ -19,4 +19,5 @@
   <depend>libpointmatcher</depend>
   <depend>mincurves</depend>
   <depend>minkindr</depend>
+  <depend>pcl_catkin</depend>
 </package>

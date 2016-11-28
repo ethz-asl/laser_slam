@@ -123,6 +123,6 @@ static laser_slam::EstimatorParams getOnlineEstimatorParams(const ros::NodeHandl
   return params;
 }
 
-} // namespace segmatch_ros
+} // namespace laser_slam_ros
 
 #endif // LASER_SLAM_ROS_COMMON_HPP_

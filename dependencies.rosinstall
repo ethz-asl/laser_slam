@@ -15,7 +15,7 @@
    uri: https://github.com/ethz-asl/doxygen_catkin.git
 - git:
    local-name: mincurves
-   uri: git@github.com:ethz-asl/mincurves.git
+   uri: https://github.com/ethz-asl/mincurves.git
 - git:
    local-name: gtsam_catkin
    uri: https://github.com/ethz-asl/gtsam_catkin.git

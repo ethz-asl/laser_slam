@@ -47,6 +47,9 @@ class LaserTrack {
   /// \brief Get one local cloud in world frame.
   void getLocalCloudInWorldFrame(const Time& timestamp, DataPoints* out_point_cloud) const;
 
+  /// \brief Get all laser scans.
+  const std::vector<LaserScan>* getLaserScans() const;
+
   /// \brief Get the trajectory.
   void getTrajectory(Trajectory* trajectory) const;
 

@@ -34,6 +34,8 @@ class IncrementalEstimator {
 
   std::shared_ptr<LaserTrack> getLaserTrack(unsigned int laser_track_id);
 
+  std::vector<std::shared_ptr<LaserTrack>> getAllLaserTracks();
+
   // Build the factor graph and estimate the trajectory.
   gtsam::Values estimate(const gtsam::NonlinearFactorGraph& new_factors,
                          const gtsam::Values& new_values);

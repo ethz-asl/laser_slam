@@ -27,6 +27,7 @@ struct LaserSlamWorkerParams {
   std::string full_map_pub_topic;
   std::string local_map_pub_topic;
   std::string distant_map_pub_topic;
+  std::string get_laser_track_srv_topic;
 
   // Map publication.
   bool publish_local_map;
@@ -62,6 +63,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/full_map_pub_topic", params.full_map_pub_topic);
   nh.getParam(ns + "/local_map_pub_topic", params.local_map_pub_topic);
   nh.getParam(ns + "/distant_map_pub_topic", params.distant_map_pub_topic);
+  nh.getParam(ns + "/get_laser_track_srv_topic", params.get_laser_track_srv_topic);
 
   return params;
 }

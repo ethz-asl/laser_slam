@@ -12,6 +12,7 @@
 #include <segmatch/common.hpp>
 #include <tf/transform_listener.h>
 
+#include "laser_slam_ros/GetLaserTrackSrv.h"
 #include "laser_slam_ros/common.hpp"
 
 namespace laser_slam_ros {
@@ -70,6 +71,10 @@ class LaserSlamWorker {
                     const std::string& second_frame,
                     tf::StampedTransform* transform_ptr,
                     ros::Time transform_time = ros::Time(0));
+
+  bool getLaserTracksServiceCall(laser_slam_ros::GetLaserTrackSrv::Request& request,
+                                 laser_slam_ros::GetLaserTrackSrv::Response& response);
+
  private:
   LaserSlamWorkerParams params_;
 
@@ -91,6 +96,9 @@ class LaserSlamWorker {
   //  ros::Publisher point_cloud_pub_;
   //  ros::Publisher distant_map_pub_;
   //  ros::Publisher new_fixed_cloud_pub_;
+
+  // Services.
+  ros::ServiceServer get_laser_track_srv_;
 
   tf::TransformListener tf_listener_;
 

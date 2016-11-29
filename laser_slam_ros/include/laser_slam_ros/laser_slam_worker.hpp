@@ -8,8 +8,6 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/point_types.h>
 #include <sensor_msgs/PointCloud2.h>
-//TODO fix this dependency.
-#include <segmatch/common.hpp>
 #include <tf/transform_listener.h>
 
 #include "laser_slam_ros/GetLaserTrackSrv.h"
@@ -40,7 +38,7 @@ class LaserSlamWorker {
   /// \brief Publish the estimated trajectory and the odometry only based trajectory.
   void publishTrajectories();
 
-  void getLocalMapFiltered(segmatch::PointCloud* local_map_filtered);
+  void getLocalMapFiltered(laser_slam_ros::PointCloud* local_map_filtered);
 
   void clearLocalMap();
 
@@ -64,7 +62,7 @@ class LaserSlamWorker {
   laser_slam::Time curveTimeToRosTime(const laser_slam::Time& timestamp_ns) const;
 
   // Get a filtered map and apply map separation if desired.
-  void getFilteredMap(segmatch::PointCloud* filtered_map);
+  void getFilteredMap(laser_slam_ros::PointCloud* filtered_map);
 
   // TODO(renaud) : using ros::Time(0) means "use the latest available transform". Might solve your problem in relocalizer?
   bool getTransform(const std::string& first_frame,
@@ -106,14 +104,14 @@ class LaserSlamWorker {
   std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator_;
 
   // Contains the map which is estimated by the sliding window.
-  segmatch::PointCloud local_map_;
+  laser_slam_ros::PointCloud local_map_;
 
-  segmatch::PointCloud local_map_filtered_;
+  laser_slam_ros::PointCloud local_map_filtered_;
 
   // Contains the map which is distant from sensor and assumed to be fixed.
   // If the robot revisits the same environment, the distant_map_and local_map_ will be one
   // above each other, each with same density.
-  segmatch::PointCloud distant_map_;
+  laser_slam_ros::PointCloud distant_map_;
 
   // Timestamp to be subtracted to each measurement time so that the trajectory starts at time 0.
   laser_slam::Time base_time_ns_ = 0;
@@ -124,7 +122,7 @@ class LaserSlamWorker {
   laser_slam::SE3 last_pose_;
   bool last_pose_set_ = false;
 
-  pcl::VoxelGrid<segmatch::PclPoint> voxel_filter_;
+  pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
 
   // Indicates whether a new source cloud is ready for localization or loop-closure.
   bool source_cloud_ready_ = false;

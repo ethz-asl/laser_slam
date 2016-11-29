@@ -2,9 +2,19 @@
 #define LASER_SLAM_ROS_COMMON_HPP_
 
 #include <laser_slam/parameters.hpp>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <ros/ros.h>
 
 namespace laser_slam_ros {
+
+typedef pcl::PointXYZ PclPoint;
+typedef pcl::PointCloud<PclPoint> PointCloud;
+typedef PointCloud::Ptr PointCloudPtr;
+typedef pcl::PointXYZI PointI;
+typedef pcl::PointCloud<PointI> PointICloud;
+typedef PointICloud::Ptr PointICloudPtr;
 
 struct LaserSlamWorkerParams {
   // Map creation & filtering parameters.
@@ -121,6 +131,79 @@ static laser_slam::EstimatorParams getOnlineEstimatorParams(const ros::NodeHandl
   params.laser_track_params = getLaserTrackParams(nh, ns);
 
   return params;
+}
+
+static PointCloud lpmToPcl(const laser_slam::PointMatcher::DataPoints& cloud_in) {
+  PointCloud cloud_out;
+  cloud_out.width = cloud_in.getNbPoints();
+  cloud_out.height = 1;
+  for (size_t i = 0u; i < cloud_in.getNbPoints(); ++i) {
+    PclPoint point;
+    point.x = cloud_in.features(0,i);
+    point.y = cloud_in.features(1,i);
+    point.z = cloud_in.features(2,i);
+    cloud_out.push_back(point);
+  }
+  return cloud_out;
+}
+
+static void convert_to_pcl_point_cloud(const sensor_msgs::PointCloud2& cloud_message,
+                                       PointICloud* converted) {
+  pcl::PCLPointCloud2 pcl_point_cloud_2;
+  pcl_conversions::toPCL(cloud_message, pcl_point_cloud_2);
+  pcl::fromPCLPointCloud2(pcl_point_cloud_2, *converted);
+}
+
+static void convert_to_point_cloud_2_msg(const PointICloud& cloud,
+                                         const std::string& frame,
+                                         sensor_msgs::PointCloud2* converted) {
+  CHECK_NOTNULL(converted);
+  // Convert to PCLPointCloud2.
+  pcl::PCLPointCloud2 pcl_point_cloud_2;
+  pcl::toPCLPointCloud2(cloud, pcl_point_cloud_2);
+  // Convert to sensor_msgs::PointCloud2.
+  pcl_conversions::fromPCL(pcl_point_cloud_2, *converted);
+  // Apply frame to msg.
+  converted->header.frame_id = frame;
+}
+
+static void convert_to_point_cloud_2_msg(const PointCloud& cloud,
+                                         const std::string& frame,
+                                         sensor_msgs::PointCloud2* converted) {
+  PointICloud cloud_i;
+  pcl::copyPointCloud(cloud, cloud_i);
+  convert_to_point_cloud_2_msg(cloud_i, frame, converted);
+}
+
+static void applyCylindricalFilter(const PclPoint& center, double radius_m,
+                                   double height_m, bool remove_point_inside,
+                                   PointCloud* cloud) {
+  CHECK_NOTNULL(cloud);
+  PointCloud filtered_cloud;
+
+  const double radius_squared = pow(radius_m, 2.0);
+  const double height_halved_m = height_m / 2.0;
+
+  for (size_t i = 0u; i < cloud->size(); ++i) {
+    if (remove_point_inside) {
+      if ((pow(cloud->points[i].x - center.x, 2.0)
+          + pow(cloud->points[i].y - center.y, 2.0)) >= radius_squared ||
+          abs(cloud->points[i].z - center.z) >= height_halved_m) {
+        filtered_cloud.points.push_back(cloud->points[i]);
+      }
+    } else {
+      if ((pow(cloud->points[i].x - center.x, 2.0)
+          + pow(cloud->points[i].y - center.y, 2.0)) <= radius_squared &&
+          abs(cloud->points[i].z - center.z) <= height_halved_m) {
+        filtered_cloud.points.push_back(cloud->points[i]);
+      }
+    }
+  }
+
+  filtered_cloud.width = 1;
+  filtered_cloud.height = filtered_cloud.points.size();
+
+  *cloud = filtered_cloud;
 }
 
 } // namespace laser_slam_ros

@@ -1,7 +1,6 @@
 #ifndef LASER_SLAM_LASER_TRACK_HPP_
 #define LASER_SLAM_LASER_TRACK_HPP_
 
-#include <iostream>
 #include <mutex>
 
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>

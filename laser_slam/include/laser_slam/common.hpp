@@ -9,7 +9,6 @@
 #include <mincurves/DiscreteSE3Curve.hpp>
 #include <pointmatcher/PointMatcher.h>
 
-
 namespace laser_slam {
 
 typedef PointMatcher<float> PointMatcher;
@@ -255,6 +254,16 @@ static SE3 convertTransformationMatrixToSE3(
       transformation_matrix.cast<double>().topLeftCorner<3,3>());
   SE3::Position position = transformation_matrix.cast<double>().topRightCorner<3,1>();
   return SE3(rotation, position);
+}
+
+static double distanceBetweenTwoSE3(const SE3& pose1, const SE3& pose2) {
+  return std::sqrt(
+      (pose1.getPosition()(0) - pose2.getPosition()(0)) *
+      (pose1.getPosition()(0) - pose2.getPosition()(0)) +
+      (pose1.getPosition()(1) - pose2.getPosition()(1)) *
+      (pose1.getPosition()(1) - pose2.getPosition()(1)) +
+      (pose1.getPosition()(2) - pose2.getPosition()(2)) *
+      (pose1.getPosition()(2) - pose2.getPosition()(2)));
 }
 
 } // namespace laser_slam

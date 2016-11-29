@@ -16,8 +16,6 @@
 #include <pointmatcher_ros/point_cloud.h>
 #include <pointmatcher_ros/transform.h>
 #include <ros/ros.h>
-// TODO fix.
-#include <segmatch_ros/common.hpp>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <tf_conversions/tf_eigen.h>
@@ -29,9 +27,6 @@
 namespace laser_slam_ros {
 
 using namespace laser_slam;
-//TODO fix.
-using namespace segmatch;
-using namespace segmatch_ros;
 
 LaserSlamWorker::LaserSlamWorker() { }
 
@@ -371,7 +366,7 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   }
 }
 
-void LaserSlamWorker::getLocalMapFiltered(segmatch::PointCloud* local_map_filtered) {
+void LaserSlamWorker::getLocalMapFiltered(PointCloud* local_map_filtered) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_NOTNULL(local_map_filtered);
   *local_map_filtered = local_map_filtered_;

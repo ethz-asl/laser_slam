@@ -124,6 +124,11 @@ class LaserTrack {
     return trajectory_.getValueExpression(time_ns);
   };
 
+  SE3 evaluate(const curves::Time& time_ns) const {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return trajectory_.evaluate(time_ns);
+  }
+
  private:
   typedef curves::DiscreteSE3Curve CurveType;
 

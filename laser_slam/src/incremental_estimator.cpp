@@ -62,6 +62,8 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   RelativePose updated_loop_closure = loop_closure;
 
   // Convert the reference frame of the loop closure transformation.
+  // When applying the transformation w_T_a_b to the source cloud, it will align it with the
+  // target cloud.
   SE3 w_T_a_b = loop_closure.T_a_b;
   SE3 T_w_a = laser_tracks_[loop_closure.track_id_a]->evaluate(loop_closure.time_a_ns);
   SE3 T_w_b = laser_tracks_[loop_closure.track_id_b]->evaluate(loop_closure.time_b_ns);

@@ -1,9 +1,8 @@
 #include <chrono>
 
-#include <ros/ros.h>
-
 #include <laser_slam_ros/GetLaserTrackSrv.h>
 #include <octomap_world/octomap_manager.h>
+#include <ros/ros.h>
 
 int main(int argc, char** argv) {
   // Initialize glog for volumetric_mapping.
@@ -77,12 +76,13 @@ int main(int argc, char** argv) {
   // Volumetric Mapping expects ConstPtr.
   // Make copies so there is no double free when ConstPtr falls out of scope.
   std::vector<sensor_msgs::PointCloud2::ConstPtr> ptr_vec;
-  for (auto&& scan : call.response.laser_scans) ptr_vec.emplace_back(
-                                                          new sensor_msgs::PointCloud2(scan));
+  for (auto&& scan : call.response.laser_scans) {
+    ptr_vec.emplace_back(new sensor_msgs::PointCloud2(scan));
+  }
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 
   // Insertion loop.
-  for (size_t i = 0; i < traj_length && ros::ok(); ++i) {
+  for (size_t i = 0u; i < traj_length && ros::ok(); ++i) {
     std::cout << "\rInserting point cloud " << i+1 << "/" << traj_length;
     if (i > 0) {
       // Estimate remaining time.

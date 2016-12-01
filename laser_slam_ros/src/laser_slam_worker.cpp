@@ -211,31 +211,29 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 bool LaserSlamWorker::getLaserTracksServiceCall(
     laser_slam_ros::GetLaserTrackSrv::Request& request,
     laser_slam_ros::GetLaserTrackSrv::Response& response) {
-  std::vector<std::shared_ptr<LaserTrack>> laser_tracks =
+  std::vector<std::shared_ptr<LaserTrack> > laser_tracks =
       incremental_estimator_->getAllLaserTracks();
-  const std::vector<LaserScan>* scan_ptr;
   Trajectory trajectory;
   ros::Time scan_stamp;
   tf::StampedTransform tf_transform;
   geometry_msgs::TransformStamped ros_transform;
-  for (const auto& track : laser_tracks) {
-    scan_ptr = track->getLaserScans();
+  for (const auto& track: laser_tracks) {
     track->getTrajectory(&trajectory);
-    for (size_t i = 0; i < scan_ptr->size(); ++i) {
+    for (const auto& scan: track->getLaserScans()) {
       // Get data.
-      scan_stamp.fromNSec(curveTimeToRosTime(scan_ptr->at(i).time_ns));
+      scan_stamp.fromNSec(curveTimeToRosTime(scan.time_ns));
       // Fill response.
       response.laser_scans.push_back(
-              PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan_ptr->at(i).scan,
+              PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan.scan,
                                                                  params_.sensor_frame,
                                                                  scan_stamp));
       tf_transform = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
-          trajectory[scan_ptr->at(i).time_ns].getTransformationMatrix().cast<float>(),
+          trajectory.at(scan.time_ns).getTransformationMatrix().cast<float>(),
           params_.world_frame,
           params_.sensor_frame,
           scan_stamp);
       tf::transformStampedTFToMsg(tf_transform, ros_transform);
-          response.transforms.push_back(ros_transform);
+      response.transforms.push_back(ros_transform);
     }
   }
   return true;

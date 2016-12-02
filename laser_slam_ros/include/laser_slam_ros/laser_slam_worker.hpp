@@ -39,6 +39,9 @@ class LaserSlamWorker {
 
   void getLocalMapFiltered(laser_slam_ros::PointCloud* local_map_filtered);
 
+  // Get a filtered map and apply map separation if desired.
+  void getFilteredMap(laser_slam_ros::PointCloud* filtered_map);
+
   void clearLocalMap();
 
   tf::StampedTransform getWorldToOdom();
@@ -59,9 +62,6 @@ class LaserSlamWorker {
 
   // Convert time from trajectory base back to ROS base.
   laser_slam::Time curveTimeToRosTime(const laser_slam::Time& timestamp_ns) const;
-
-  // Get a filtered map and apply map separation if desired.
-  void getFilteredMap(laser_slam_ros::PointCloud* filtered_map);
 
   // TODO(renaud) : using ros::Time(0) means "use the latest available transform". Might solve your problem in relocalizer?
   bool getTransform(const std::string& first_frame,

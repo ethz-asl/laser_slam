@@ -9,7 +9,6 @@ catkin_simple(ALL_DEPS_REQUIRED)
 cs_add_library(${PROJECT_NAME} 
   src/laser_track.cpp
   src/incremental_estimator.cpp
-  #src/sliding_window_estimator.cpp
 )
 
 find_package(Boost REQUIRED COMPONENTS system thread)

@@ -433,19 +433,13 @@ LaserTrack::makeMeasurementFactor(const Pose& pose_measurement,
 void LaserTrack::computeICPTransformations() {
   if (getNumScans() > 1u) {
     Clock clock;
-    if (params_.strategy_for_icp_transformations == "local_scan_to_sub_map") {
-      local_scan_to_sub_map();
-    } else if (params_.strategy_for_icp_transformations == "local_scan_to_local_scans") {
-      local_scan_to_local_scans();
-    } else {
-      CHECK(false) << "This strategy for computing ICP transformations does not exist.";
-    }
+    localScanToSubMap();
     clock.takeTime();
     LOG(INFO) << "Took " << clock.getRealTime() << " ms to compute the ICP transformations.";
   }
 }
 
-void LaserTrack::local_scan_to_sub_map() {
+void LaserTrack::localScanToSubMap() {
   LaserScan last_scan = laser_scans_.back();
   RelativePose icp_transformation;
   icp_transformation.time_b_ns = last_scan.time_ns;
@@ -494,52 +488,6 @@ void LaserTrack::local_scan_to_sub_map() {
   icp_transformation.key_a = getPoseKey(icp_transformation.time_a_ns);
   icp_transformation.key_b = getPoseKey(icp_transformation.time_b_ns);
   icp_transformations_.push_back(icp_transformation);
-}
-
-void LaserTrack::local_scan_to_local_scans() {
-  // Transformations are computed in the frame of the previous nodes towards the newest node.
-  RelativePose icp_transformation;
-  LaserScan last_scan = laser_scans_.back();
-
-  if (params_.save_icp_results) {
-    last_scan.scan.save("/tmp/last_scan.vtk");
-  }
-
-  icp_transformation.time_b_ns = last_scan.time_ns;
-  for (size_t i = 0u; i < std::min(getNumScans() - 1u, size_t(params_.nscan_to_match)); ++i) {
-    LaserScan previous_scan = laser_scans_[getNumScans() - 2u - i];
-    icp_transformation.time_a_ns = previous_scan.time_ns;
-
-    // Obtain the initial guess from the trajectory.
-    SE3 initial_guess = trajectory_.evaluate(icp_transformation.time_a_ns).inverse() *
-        trajectory_.evaluate(icp_transformation.time_b_ns);
-
-    PointMatcher::TransformationParameters initial_guess_matrix;
-    initial_guess_matrix = initial_guess.getTransformationMatrix().cast<float>();
-
-    // Compute the ICP solution.
-    PointMatcher::TransformationParameters icp_solution = icp_.compute(last_scan.scan,
-                                                                       previous_scan.scan,
-                                                                       initial_guess_matrix);
-
-    if (params_.save_icp_results) {
-      // Save the clouds when matching to the furthest node (in time).
-      if (i + 1u == std::min(getNumScans() - 1u, size_t(params_.nscan_to_match))) {
-        previous_scan.scan.save("/tmp/previous_scan_" + std::to_string(i) + ".vtk");
-        correctTransformationMatrix(&initial_guess_matrix);
-        rigid_transformation_->compute(last_scan.scan,initial_guess_matrix).save(
-            "/tmp/last_scan_alligned_by_initial_guess_" + std::to_string(i) + ".vtk");
-        correctTransformationMatrix(&icp_solution);
-        rigid_transformation_->compute(last_scan.scan,icp_solution).save(
-            "/tmp/last_scan_alligned_by_solution" + std::to_string(i) + ".vtk");
-      }
-    }
-
-    icp_transformation.T_a_b = convertTransformationMatrixToSE3(icp_solution);
-    icp_transformation.key_a = getPoseKey(icp_transformation.time_a_ns);
-    icp_transformation.key_b = getPoseKey(icp_transformation.time_b_ns);
-    icp_transformations_.push_back(icp_transformation);
-  }
 }
 
 Pose* LaserTrack::findPose(const Time& timestamp_ns) {

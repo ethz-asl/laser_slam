@@ -41,7 +41,8 @@ class IncrementalEstimator {
                          const gtsam::Values& new_values);
 
   gtsam::Values estimateAndRemove(const gtsam::NonlinearFactorGraph& new_factors,
-                                  const gtsam::Values& new_values);
+                                  const gtsam::Values& new_values,
+                                  const std::vector<unsigned int>& affected_worker_ids);
 
   gtsam::Values registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
                               const gtsam::Values& new_values,
@@ -66,7 +67,8 @@ class IncrementalEstimator {
 
   gtsam::noiseModel::Base::shared_ptr loop_closure_noise_model_;
 
-  size_t factor_indice_to_remove_;
+  typedef std::pair<unsigned int, size_t> WorkerIdFactorIndicePair;
+  std::vector<WorkerIdFactorIndicePair> factor_indices_to_remove_;
 
   // Parameters.
   EstimatorParams params_;

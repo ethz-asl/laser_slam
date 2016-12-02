@@ -90,8 +90,6 @@ void LaserSlamWorker::init(
 
 void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  LOG(INFO) << "Received cloud getting transform from " << params_.odom_frame <<
-      " to " << params_.sensor_frame;
   if (tf_listener_.waitForTransform(params_.odom_frame, params_.sensor_frame,
                                     cloud_msg_in.header.stamp, ros::Duration(kTimeout_s))) {
     // Get the tf transform.
@@ -137,9 +135,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       }
 
       // Update the trajectory.
-      LOG(INFO) << "worker_id_ " << worker_id_ << " is updating the laser track";
       laser_track_->updateFromGTSAMValues(result);
-      LOG(INFO) << "worker_id_ " << worker_id_ << " is done updating the laser track";
 
       // Adjust the correction between the world and odom frames.
       Pose current_pose = laser_track_->getCurrentPose();
@@ -190,17 +186,12 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         if (new_fixed_cloud_pcl.size() > 0u) {
           if (local_map_.size() > 0u) {
             local_map_ += new_fixed_cloud_pcl;
-            ROS_INFO_STREAM("Adding new fixed cloud to the local map now with size " <<
-                            local_map_.size() << ".");
           } else {
-            ROS_INFO("Creating a new local map from the fixed cloud.");
             local_map_ = new_fixed_cloud_pcl;
           }
         }
       }
 
-    } else {
-      ROS_WARN("[SegMapper] Scan not processed (Not moved enough since last pose).");
     }
   } else {
     ROS_WARN_STREAM("[SegMapper] Timeout while waiting between " + params_.odom_frame  +

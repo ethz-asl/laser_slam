@@ -127,6 +127,11 @@ class LaserTrack {
     return trajectory_.getValueExpression(time_ns);
   };
 
+  SE3 evaluate(const curves::Time& time_ns) const {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return trajectory_.evaluate(time_ns);
+  }
+
  private:
   typedef curves::DiscreteSE3Curve CurveType;
 
@@ -146,11 +151,7 @@ class LaserTrack {
 
   // Compute ICP transformation between the last local scan to a concatenation of the
   // previous scans.
-  void local_scan_to_sub_map();
-
-  // Compute ICP transformations between the last local scan a set of the
-  // previous scans.
-  void local_scan_to_local_scans();
+  void localScanToSubMap();
 
   // Get the pose measurements at a given time.
   SE3 getPoseMeasurement(const Time& timestamp_ns) const { return findPose(timestamp_ns).T_w; };

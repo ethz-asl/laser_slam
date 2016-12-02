@@ -59,20 +59,30 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   CHECK_LE(loop_closure.time_b_ns, laser_tracks_[loop_closure.track_id_b]->getMaxTime()) <<
       "Loop closure has invalid time.";
 
-  // Apply an ICP step if desired.
   RelativePose updated_loop_closure = loop_closure;
+
+  // Convert the reference frame of the loop closure transformation.
+  // When applying the transformation w_T_a_b to the source cloud, it will align it with the
+  // target cloud.
+  SE3 w_T_a_b = loop_closure.T_a_b;
+  SE3 T_w_a = laser_tracks_[loop_closure.track_id_a]->evaluate(loop_closure.time_a_ns);
+  SE3 T_w_b = laser_tracks_[loop_closure.track_id_b]->evaluate(loop_closure.time_b_ns);
+  SE3 a_T_a_b = T_w_a.inverse() * w_T_a_b * T_w_b;
+  updated_loop_closure.T_a_b = a_T_a_b;
+
+  // Apply an ICP step if desired.
   if (params_.do_icp_step_on_loop_closures) {
     // Get the initial guess.
     PointMatcher::TransformationParameters initial_guess =
-        loop_closure.T_a_b.getTransformationMatrix().cast<float>();
+        updated_loop_closure.T_a_b.getTransformationMatrix().cast<float>();
 
     LOG(INFO) << "Creating the submaps for loop closure ICP.";
     Clock clock;
     DataPoints sub_map_a;
     DataPoints sub_map_b;
-    laser_tracks_[loop_closure.track_id_a]->buildSubMapAroundTime(
+    laser_tracks_[updated_loop_closure.track_id_a]->buildSubMapAroundTime(
         loop_closure.time_a_ns, params_.loop_closures_sub_maps_radius, &sub_map_a);
-    laser_tracks_[loop_closure.track_id_b]->buildSubMapAroundTime(
+    laser_tracks_[updated_loop_closure.track_id_b]->buildSubMapAroundTime(
         loop_closure.time_b_ns, params_.loop_closures_sub_maps_radius, &sub_map_b);
     clock.takeTime();
     LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
@@ -89,20 +99,24 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   }
 
   LOG(INFO) << "Creating loop closure factor.";
+
   NonlinearFactorGraph new_factors;
-  Expression<SE3> T_w_b(laser_tracks_[loop_closure.track_id_b]->getValueExpression(
+  Expression<SE3> exp_T_w_b(laser_tracks_[loop_closure.track_id_b]->getValueExpression(
       updated_loop_closure.time_b_ns));
-  Expression<SE3> T_w_a(laser_tracks_[loop_closure.track_id_a]->getValueExpression(
+  Expression<SE3> exp_T_w_a(laser_tracks_[loop_closure.track_id_a]->getValueExpression(
       updated_loop_closure.time_a_ns));
-  Expression<SE3> T_a_w(kindr::minimal::inverse(T_w_a));
-  Expression<SE3> relative(kindr::minimal::compose(T_a_w, T_w_b));
+  Expression<SE3> exp_T_a_w(kindr::minimal::inverse(exp_T_w_a));
+  Expression<SE3> exp_relative(kindr::minimal::compose(exp_T_a_w, exp_T_w_b));
   ExpressionFactor<SE3> new_factor(loop_closure_noise_model_, updated_loop_closure.T_a_b,
-                                   relative);
+                                   exp_relative);
   new_factors.push_back(new_factor);
 
   LOG(INFO) << "Estimating the trajectories.";
+  std::vector<unsigned int> affected_worker_ids;
+  affected_worker_ids.push_back(loop_closure.track_id_a);
+  affected_worker_ids.push_back(loop_closure.track_id_b);
   Values new_values;
-  Values result = estimateAndRemove(new_factors, new_values);
+  Values result = estimateAndRemove(new_factors, new_values, affected_worker_ids);
 
   LOG(INFO) << "Updating the trajectories after LC.";
   for (auto& track: laser_tracks_) {
@@ -130,12 +144,27 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 
 Values IncrementalEstimator::estimateAndRemove(
     const gtsam::NonlinearFactorGraph& new_factors,
-    const gtsam::Values& new_values) {
+    const gtsam::Values& new_values,
+    const std::vector<unsigned int>& affected_worker_ids) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Clock clock;
-  // Update and force relinearization.
+
+  // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
-  factor_indices_to_remove.push_back(factor_indice_to_remove_);
+  for (const auto& worker_id: affected_worker_ids) {
+    if (!factor_indices_to_remove_.empty()) {
+      std::vector<WorkerIdFactorIndicePair>::iterator it = factor_indices_to_remove_.begin();
+      bool found = false;
+      while (it != factor_indices_to_remove_.end() && !found) {
+        if (it->first == worker_id) {
+          found = true;
+          factor_indices_to_remove.push_back(it->second);
+          it = factor_indices_to_remove_.erase(it);
+        }
+      }
+    }
+  }
+
   isam2_.update(new_factors, new_values, factor_indices_to_remove).print();
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
@@ -155,8 +184,9 @@ gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGr
   ISAM2Result update_result = isam2_.update(new_factors, new_values);
 
   CHECK_EQ(update_result.newFactorsIndices.size(), 1u);
-  if (worker_id == 1) {
-    factor_indice_to_remove_ = update_result.newFactorsIndices.at(0u);
+  if (worker_id > 0u) {
+    factor_indices_to_remove_.push_back(WorkerIdFactorIndicePair(
+        worker_id, update_result.newFactorsIndices.at(0u)));
   }
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();

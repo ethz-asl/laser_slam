@@ -15,8 +15,6 @@ struct LaserTrackParams {
   std::string icp_configuration_file;
   std::string icp_input_filters_file;
   bool use_icp_factors;
-  std::string strategy_for_icp_transformations;
-  int nscan_to_match;
   int nscan_in_sub_map;
   bool save_icp_results;
 }; // struct LaserTrackParams
@@ -29,9 +27,6 @@ struct EstimatorParams {
   bool do_icp_step_on_loop_closures;
   int loop_closures_sub_maps_radius;
 
-  int sliding_window_size;
-  bool add_intermediate_poses;
-  bool publish_covariances;
   LaserTrackParams laser_track_params;
 }; // struct EstimatorParams
 

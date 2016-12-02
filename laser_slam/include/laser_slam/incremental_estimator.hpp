@@ -19,7 +19,7 @@ class IncrementalEstimator {
   IncrementalEstimator() {};
   /// \brief Constructor.
   explicit IncrementalEstimator(const EstimatorParams& parameters,
-                                unsigned int n_laser_slam_workers);
+                                unsigned int n_laser_slam_workers = 1u);
 
   ~IncrementalEstimator() {};
 
@@ -27,7 +27,7 @@ class IncrementalEstimator {
   void processLoopClosure(const RelativePose& loop_closure);
 
   /// \brief Get the current estimate.
-  Pose getCurrentPose(unsigned int laser_track_id) const {
+  Pose getCurrentPose(unsigned int laser_track_id = 0u) const {
     std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
     return laser_tracks_[laser_track_id]->getCurrentPose();
   };

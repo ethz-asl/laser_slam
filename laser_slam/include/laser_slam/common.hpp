@@ -9,7 +9,6 @@
 #include <mincurves/DiscreteSE3Curve.hpp>
 #include <pointmatcher/PointMatcher.h>
 
-
 namespace laser_slam {
 
 typedef PointMatcher<float> PointMatcher;
@@ -106,6 +105,8 @@ struct RelativePose {
   Key key_a;
   /// \brief Posterior node key.
   Key key_b;
+  unsigned int track_id_a;
+  unsigned int track_id_b;
 };
 
 /// \brief LaserScan type including point cloud and time stamp.
@@ -226,6 +227,43 @@ static void loadEigenMatrixXdCSV(std::string file_name, Eigen::MatrixXd* matrix)
   }
   LOG(INFO) << "Loaded " << file_name << " with " << n_rows << " rows and " <<
       n_cols << " cols.";
+}
+
+/// \brief Optimization result structure.
+struct OptimizationResult {
+  /// \brief Number of optimizer iterations performed.
+  size_t num_iterations = 0;
+  /// \brief Number of intermediate steps performed within the optimization.
+  /// For L-M, this is the number of lambdas tried.
+  size_t num_intermediate_steps = 0;
+  /// \brief Number of variables.
+  size_t num_variables = 0;
+  /// \brief Initial factor graph error.
+  double initial_error = 0;
+  /// \brief Final factor graph error.
+  double final_error = 0;
+  /// \brief Optimization duration
+  long duration_ms = 0;
+  /// \brief CPU optimization duration.
+  long durationCpu_ms = 0;
+};
+
+static SE3 convertTransformationMatrixToSE3(
+    const PointMatcher::TransformationParameters& transformation_matrix) {
+  SO3 rotation = SO3::constructAndRenormalize(
+      transformation_matrix.cast<double>().topLeftCorner<3,3>());
+  SE3::Position position = transformation_matrix.cast<double>().topRightCorner<3,1>();
+  return SE3(rotation, position);
+}
+
+static double distanceBetweenTwoSE3(const SE3& pose1, const SE3& pose2) {
+  return std::sqrt(
+      (pose1.getPosition()(0) - pose2.getPosition()(0)) *
+      (pose1.getPosition()(0) - pose2.getPosition()(0)) +
+      (pose1.getPosition()(1) - pose2.getPosition()(1)) *
+      (pose1.getPosition()(1) - pose2.getPosition()(1)) +
+      (pose1.getPosition()(2) - pose2.getPosition()(2)) *
+      (pose1.getPosition()(2) - pose2.getPosition()(2)));
 }
 
 } // namespace laser_slam

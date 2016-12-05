@@ -7,7 +7,9 @@ using namespace curves;
 
 namespace laser_slam {
 
-LaserTrack::LaserTrack(const LaserTrackParams& parameters) : params_(parameters) {
+LaserTrack::LaserTrack(const LaserTrackParams& parameters,
+                       unsigned int laser_track_id) : params_(parameters),
+                           laser_track_id_(laser_track_id) {
   // Load the ICP configurations.
   std::ifstream ifs_icp_configurations(params_.icp_configuration_file.c_str());
   if (ifs_icp_configurations.good()) {
@@ -30,9 +32,40 @@ LaserTrack::LaserTrack(const LaserTrackParams& parameters) : params_(parameters)
   // Create a rigid transformation.
   rigid_transformation_ = PointMatcher::get().REG(Transformation).create("RigidTransformation");
   CHECK_NOTNULL(rigid_transformation_);
+
+  // Create the noise models.
+  using namespace gtsam::noiseModel;
+  if (params_.add_m_estimator_on_odom) {
+    LOG(INFO) << "Creating odometry noise model with cauchy.";
+    odometry_noise_model_  = gtsam::noiseModel::Robust::Create(
+        gtsam::noiseModel::mEstimator::Cauchy::Create(1),
+        gtsam::noiseModel::Diagonal::Sigmas(params_.odometry_noise_model));
+  } else {
+    odometry_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(params_.odometry_noise_model);
+  }
+
+  if (params_.add_m_estimator_on_icp) {
+    LOG(INFO) << "Creating ICP noise model with cauchy.";
+    icp_noise_model_  = gtsam::noiseModel::Robust::Create(
+        gtsam::noiseModel::mEstimator::Cauchy::Create(1),
+        gtsam::noiseModel::Diagonal::Sigmas(params_.icp_noise_model));
+  } else {
+    icp_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(params_.icp_noise_model);
+  }
+
+  Eigen::Matrix<double,6,1> noise;
+  noise(0) = 0.0000001;
+  noise(1) = 0.0000001;
+  noise(2) = 0.0000001;
+  noise(3) = 0.0000001;
+  noise(4) = 0.0000001;
+  noise(5) = 0.0000001;
+
+  prior_noise_model_ = gtsam::noiseModel::Diagonal::Sigmas(noise);
 }
 
 void LaserTrack::processPose(const Pose& pose) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   if (pose_measurements_.empty() && pose.time_ns != 0) {
     LOG(WARNING) << "First pose had timestamp different than 0 (" << pose.time_ns << ".";
   }
@@ -40,6 +73,7 @@ void LaserTrack::processPose(const Pose& pose) {
 }
 
 void LaserTrack::processLaserScan(const LaserScan& in_scan) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   LaserScan scan = in_scan;
 
   // Apply the input filters.
@@ -85,50 +119,118 @@ void LaserTrack::processLaserScan(const LaserScan& in_scan) {
   laser_scans_.push_back(scan);
 }
 
-void LaserTrack::processLoopClosure(const RelativePose& loop_closure) {
-  CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_a_ns, trajectory_.getMinTime()) << "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_a_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
-  CHECK_GE(loop_closure.time_b_ns, trajectory_.getMinTime()) << "Loop closure has invalid time.";
-  CHECK_LE(loop_closure.time_b_ns, trajectory_.getMaxTime()) << "Loop closure has invalid time.";
+void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
+                                         gtsam::NonlinearFactorGraph* newFactors,
+                                         gtsam::Values* newValues,
+                                         bool* is_prior) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+  if (pose.time_ns != in_scan.time_ns) {
+    LOG(WARNING) << "The time of the pose to add (" << pose.time_ns << ") does not match the " <<
+        "time of the scan to add (" << in_scan.time_ns << ").";
+  }
 
-  if (params_.do_icp_step_on_loop_closures) {
-    // Get the initial guess.
-    PointMatcher::TransformationParameters initial_guess =
-        loop_closure.T_a_b.getTransformationMatrix().cast<float>();
+  if (newFactors != NULL) {
+    //todo clear without failure.
+    CHECK(newFactors->empty());
+  }
+  if (newValues != NULL) {
+    newValues->clear();
+  }
 
-    // Create the sub maps.
-    Clock clock;
-    DataPoints sub_map_a;
-    DataPoints sub_map_b;
-    buildSubMapAroundTime(loop_closure.time_a_ns, &sub_map_a);
-    buildSubMapAroundTime(loop_closure.time_b_ns, &sub_map_b);
-    clock.takeTime();
-    LOG(INFO) << "Took " << clock.getRealTime() << " ms to create loop closures sub maps.";
+  LaserScan scan = in_scan;
 
-    // Compute the ICP solution.
-    clock.start();
-    PointMatcher::TransformationParameters icp_solution = icp_.compute(sub_map_b, sub_map_a,
-                                                                       initial_guess);
-    clock.takeTime();
-    LOG(INFO) << "Took " << clock.getRealTime() <<
-        " ms to compute the icp_solution for the loop closure.";
+  // Apply the input filters.
+  Clock clock;
+  input_filters_.apply(scan.scan);
+  clock.takeTime();
+  LOG(INFO) << "Took " << clock.getRealTime() << " ms to filter the input scan.";
 
-    RelativePose updated_loop_closure = loop_closure;
-    updated_loop_closure.T_a_b = convertTransformationMatrixToSE3(icp_solution);
-    loop_closures_.push_back(updated_loop_closure);
+  // Save the pose measurement.
+  if (pose_measurements_.empty() && pose.time_ns != 0) {
+    LOG(WARNING) << "First pose had timestamp different than 0 (" << pose.time_ns << ".";
+  }
+  pose_measurements_.push_back(pose);
+
+  // Compute the relative pose measurement, extend the trajectory and
+  // compute the ICP transformations.
+  if (trajectory_.isEmpty()) {
+    scan.key = extendTrajectory(scan.time_ns, getPoseMeasurement(scan.time_ns));
+
+    // Update the pose key and save the scan.
+    setPoseKey(scan.time_ns, scan.key);
+    laser_scans_.push_back(scan);
+
+    if (newFactors != NULL) {
+      Pose new_pose = pose;
+      // Add a prior on the first key.
+      if (laser_track_id_ == 1u) {
+        SE3 offset_transform(SE3::Rotation(1.0, 0.0, 0.0, 0.0), SE3::Position(25.0, 0.0, 0.0));
+        new_pose.T_w = offset_transform * new_pose.T_w;
+      }
+      newFactors->push_back(makeMeasurementFactor(new_pose, prior_noise_model_));
+    }
+    if (is_prior != NULL) {
+      *is_prior = true;
+    }
   } else {
-    loop_closures_.push_back(loop_closure);
+    // Evaluate the pose measurement at the last trajectory node.
+    SE3 last_pose_measurement = getPoseMeasurement(trajectory_.getMaxTime());
+
+    // Evaluate the pose measurement at the new trajectory node.
+    SE3 new_pose_measurement = getPoseMeasurement(scan.time_ns);
+
+    // Create the relative pose measurement.
+    RelativePose relative_measurement;
+    relative_measurement.T_a_b = last_pose_measurement.inverse()*new_pose_measurement;
+    relative_measurement.time_a_ns = trajectory_.getMaxTime();
+    relative_measurement.key_a = getPoseKey(trajectory_.getMaxTime());
+    relative_measurement.time_b_ns = scan.time_ns;
+
+    // Extend the trajectory with the new node position.
+    scan.key =  extendTrajectory(scan.time_ns, trajectory_.evaluate(trajectory_.getMaxTime()) *
+                                 relative_measurement.T_a_b);
+
+    // Update the pose key and save the scan.
+    setPoseKey(scan.time_ns, scan.key);
+    laser_scans_.push_back(scan);
+
+    // Complete and save the relative_measurement.
+    relative_measurement.key_b = scan.key;
+    odometry_measurements_.push_back(relative_measurement);
+
+    // Compute the ICP transformations.
+    if (params_.use_icp_factors) {
+      computeICPTransformations();
+    }
+
+    if (newFactors != NULL) {
+      // Add the odometry and ICP factors.
+      newFactors->push_back(makeRelativeMeasurementFactor(relative_measurement,
+                                                          odometry_noise_model_));
+      if (params_.use_icp_factors) {
+        newFactors->push_back(makeRelativeMeasurementFactor(
+            icp_transformations_[icp_transformations_.size()-1u], icp_noise_model_));
+      }
+    }
+    if (is_prior != NULL) {
+      *is_prior = false;
+    }
+  }
+
+  if (newValues != NULL) {
+    newValues->insert(scan.key, pose.T_w);
   }
 }
 
 void LaserTrack::getLastPointCloud(DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
   // todo
 }
 
 void LaserTrack::getPointCloudOfTimeInterval(const std::pair<Time, Time>& times_ns,
                                              DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
   *out_point_cloud = DataPoints();
   // todo
@@ -136,6 +238,7 @@ void LaserTrack::getPointCloudOfTimeInterval(const std::pair<Time, Time>& times_
 
 void LaserTrack::getLocalCloudInWorldFrame(const Time& timestamp_ns,
                                            DataPoints* out_point_cloud) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_point_cloud);
 
   // Find an iterator to the local scan.
@@ -155,6 +258,7 @@ void LaserTrack::getLocalCloudInWorldFrame(const Time& timestamp_ns,
 }
 
 void LaserTrack::getTrajectory(Trajectory* trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(trajectory)->clear();
 
   std::vector<Time> trajectory_times_ns;
@@ -165,12 +269,19 @@ void LaserTrack::getTrajectory(Trajectory* trajectory) const {
   }
 }
 
+const std::vector<LaserScan>& LaserTrack::getLaserScans() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+  return laser_scans_;
+}
+
 void LaserTrack::getCovariances(std::vector<Covariance>* out_covariances) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_covariances)->clear();
   *out_covariances = covariances_;
 }
 
 Pose LaserTrack::getCurrentPose() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   Pose current_pose;
   current_pose.time_ns = getMaxTime();
   current_pose.T_w = trajectory_.evaluate(current_pose.time_ns);
@@ -178,6 +289,7 @@ Pose LaserTrack::getCurrentPose() const {
 }
 
 void LaserTrack::getOdometryTrajectory(Trajectory* trajectory) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(trajectory)->clear();
   for (const auto& pose: pose_measurements_) {
     trajectory->emplace(pose.time_ns, pose.T_w);
@@ -185,14 +297,17 @@ void LaserTrack::getOdometryTrajectory(Trajectory* trajectory) const {
 }
 
 Time LaserTrack::getMinTime() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   return trajectory_.getMinTime();
 }
 
 Time LaserTrack::getMaxTime() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   return trajectory_.getMaxTime();
 }
 
 void LaserTrack::getLaserScansTimes(std::vector<curves::Time>* out_times_ns) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(out_times_ns)->clear();
   for (size_t i = 0u; i < laser_scans_.size(); ++i) {
     out_times_ns->push_back(laser_scans_[i].time_ns);
@@ -200,6 +315,7 @@ void LaserTrack::getLaserScansTimes(std::vector<curves::Time>* out_times_ns) con
 }
 
 void LaserTrack::appendPriorFactors(const Time& prior_time_ns, NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   trajectory_.addPriorFactors(graph, prior_time_ns);
@@ -209,6 +325,7 @@ void LaserTrack::appendOdometryFactors(const curves::Time& optimization_min_time
                                        const curves::Time& optimization_max_time_ns,
                                        noiseModel::Base::shared_ptr noise_model,
                                        NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   //TODO(Renaud): this can be optimized but let's see when we fix issue #27.
@@ -224,6 +341,7 @@ void LaserTrack::appendICPFactors(const curves::Time& optimization_min_time_ns,
                                   const curves::Time& optimization_max_time_ns,
                                   noiseModel::Base::shared_ptr noise_model,
                                   NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   for (size_t i = 0u; i < icp_transformations_.size(); ++i) {
@@ -248,6 +366,7 @@ void LaserTrack::appendLoopClosureFactors(const curves::Time& optimization_min_t
                                           const curves::Time& optimization_max_time_ns,
                                           noiseModel::Base::shared_ptr noise_model,
                                           NonlinearFactorGraph* graph) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK_NOTNULL(graph);
 
   for (size_t i = 0u; i < loop_closures_.size(); ++i) {
@@ -268,15 +387,18 @@ void LaserTrack::appendLoopClosureFactors(const curves::Time& optimization_min_t
 }
 
 void LaserTrack::initializeGTSAMValues(const KeySet& keys, Values* values) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   trajectory_.initializeGTSAMValues(keys, values);
 }
 
 void LaserTrack::updateFromGTSAMValues(const Values& values) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   trajectory_.updateFromGTSAMValues(values);
 }
 
 void LaserTrack::updateCovariancesFromGTSAMValues(const gtsam::NonlinearFactorGraph& factor_graph,
                                                   const gtsam::Values& values) {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   gtsam::KeySet keys = factor_graph.keys();
   gtsam::Marginals marginals(factor_graph, values);
   for (const auto& key: keys) {
@@ -306,22 +428,23 @@ LaserTrack::makeRelativeMeasurementFactor(const RelativePose& relative_pose_meas
   }
 }
 
+gtsam::ExpressionFactor<SE3>
+LaserTrack::makeMeasurementFactor(const Pose& pose_measurement,
+                                  gtsam::noiseModel::Base::shared_ptr noise_model) const {
+  Expression<SE3> T_w(trajectory_.getValueExpression(pose_measurement.time_ns));
+  return ExpressionFactor<SE3>(noise_model,pose_measurement.T_w, T_w);
+}
+
 void LaserTrack::computeICPTransformations() {
   if (getNumScans() > 1u) {
     Clock clock;
-    if (params_.strategy_for_icp_transformations == "local_scan_to_sub_map") {
-      local_scan_to_sub_map();
-    } else if (params_.strategy_for_icp_transformations == "local_scan_to_local_scans") {
-      local_scan_to_local_scans();
-    } else {
-      CHECK(false) << "This strategy for computing ICP transformations does not exist.";
-    }
+    localScanToSubMap();
     clock.takeTime();
     LOG(INFO) << "Took " << clock.getRealTime() << " ms to compute the ICP transformations.";
   }
 }
 
-void LaserTrack::local_scan_to_sub_map() {
+void LaserTrack::localScanToSubMap() {
   LaserScan last_scan = laser_scans_.back();
   RelativePose icp_transformation;
   icp_transformation.time_b_ns = last_scan.time_ns;
@@ -372,52 +495,6 @@ void LaserTrack::local_scan_to_sub_map() {
   icp_transformations_.push_back(icp_transformation);
 }
 
-void LaserTrack::local_scan_to_local_scans() {
-  // Transformations are computed in the frame of the previous nodes towards the newest node.
-  RelativePose icp_transformation;
-  LaserScan last_scan = laser_scans_.back();
-
-  if (params_.save_icp_results) {
-    last_scan.scan.save("/tmp/last_scan.vtk");
-  }
-
-  icp_transformation.time_b_ns = last_scan.time_ns;
-  for (size_t i = 0u; i < std::min(getNumScans() - 1u, size_t(params_.nscan_to_match)); ++i) {
-    LaserScan previous_scan = laser_scans_[getNumScans() - 2u - i];
-    icp_transformation.time_a_ns = previous_scan.time_ns;
-
-    // Obtain the initial guess from the trajectory.
-    SE3 initial_guess = trajectory_.evaluate(icp_transformation.time_a_ns).inverse() *
-        trajectory_.evaluate(icp_transformation.time_b_ns);
-
-    PointMatcher::TransformationParameters initial_guess_matrix;
-    initial_guess_matrix = initial_guess.getTransformationMatrix().cast<float>();
-
-    // Compute the ICP solution.
-    PointMatcher::TransformationParameters icp_solution = icp_.compute(last_scan.scan,
-                                                                       previous_scan.scan,
-                                                                       initial_guess_matrix);
-
-    if (params_.save_icp_results) {
-      // Save the clouds when matching to the furthest node (in time).
-      if (i + 1u == std::min(getNumScans() - 1u, size_t(params_.nscan_to_match))) {
-        previous_scan.scan.save("/tmp/previous_scan_" + std::to_string(i) + ".vtk");
-        correctTransformationMatrix(&initial_guess_matrix);
-        rigid_transformation_->compute(last_scan.scan,initial_guess_matrix).save(
-            "/tmp/last_scan_alligned_by_initial_guess_" + std::to_string(i) + ".vtk");
-        correctTransformationMatrix(&icp_solution);
-        rigid_transformation_->compute(last_scan.scan,icp_solution).save(
-            "/tmp/last_scan_alligned_by_solution" + std::to_string(i) + ".vtk");
-      }
-    }
-
-    icp_transformation.T_a_b = convertTransformationMatrixToSE3(icp_solution);
-    icp_transformation.key_a = getPoseKey(icp_transformation.time_a_ns);
-    icp_transformation.key_b = getPoseKey(icp_transformation.time_b_ns);
-    icp_transformations_.push_back(icp_transformation);
-  }
-}
-
 Pose* LaserTrack::findPose(const Time& timestamp_ns) {
   CHECK(!pose_measurements_.empty()) << "Cannot register the scan as no pose was registered.";
   CHECK_LE(timestamp_ns, pose_measurements_.back().time_ns) << "The requested time ("
@@ -455,6 +532,7 @@ Pose LaserTrack::findPose(const Time& timestamp_ns) const {
 }
 
 Pose LaserTrack::findNearestPose(const Time& timestamp_ns) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   CHECK(!pose_measurements_.empty()) << "Cannot find nearest pose as no pose was registered.";
   CHECK_LE(timestamp_ns, pose_measurements_.back().time_ns) << "The requested time ("
       << timestamp_ns << ") is later than the latest pose time. Latest pose time is "
@@ -480,14 +558,6 @@ Key LaserTrack::extendTrajectory(const Time& timestamp_ns, const SE3& value) {
   return keys[0];
 }
 
-SE3 LaserTrack::convertTransformationMatrixToSE3(
-    const PointMatcher::TransformationParameters& transformation_matrix) const {
-  SO3 rotation = SO3::constructAndRenormalize(
-      transformation_matrix.cast<double>().topLeftCorner<3,3>());
-  SE3::Position position = transformation_matrix.cast<double>().topRightCorner<3,1>();
-  return SE3(rotation, position);
-}
-
 std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
     const curves::Time& time_ns) const {
   bool found = false;
@@ -502,11 +572,16 @@ std::vector<LaserScan>::const_iterator LaserTrack::getIteratorToScanAtTime(
   if (it == laser_scans_.end()) {
     CHECK(false) << "Could not find the scan.";
   }
+  CHECK_EQ(time_ns, it->time_ns);
   return it;
 }
 
 void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
+                                       const unsigned int sub_maps_radius,
                                        DataPoints* sub_map_out) const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+  LOG(INFO) << "buildSubMapAroundTime " << time_ns << " for track " <<
+      laser_track_id_;
   CHECK_NOTNULL(sub_map_out);
   const SE3 T_w_a = trajectory_.evaluate(time_ns);
 
@@ -520,7 +595,7 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
   // Add the scans with decreasing time stamps.
   bool reached_begin = false;
   if (it_before != laser_scans_.begin()) {
-    for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+    for (unsigned int i = 0u; i < sub_maps_radius; ++i) {
       if (!reached_begin) {
         --it_before;
         if (it_before == laser_scans_.begin()) {
@@ -535,13 +610,16 @@ void LaserTrack::buildSubMapAroundTime(const curves::Time& time_ns,
   }
 
   // Add the scans with increasing time stamps.
-  for (int i = 0; i < params_.loop_closures_sub_maps_radius; ++i) {
+  bool reached_end = false;
+  for (unsigned int i = 0u; i < sub_maps_radius; ++i) {
     ++it_after;
-    if (it_after != laser_scans_.end()) {
+    if (it_after != laser_scans_.end() && !reached_end) {
       transformation_matrix = (T_w_a.inverse() *
           trajectory_.evaluate(it_after->time_ns)).getTransformationMatrix().cast<float>();
       correctTransformationMatrix(&transformation_matrix);
       sub_map.concatenate(rigid_transformation_->compute(it_after->scan,transformation_matrix));
+    } else {
+      reached_end = true;
     }
   }
 

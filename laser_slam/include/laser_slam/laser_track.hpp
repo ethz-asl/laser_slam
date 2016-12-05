@@ -1,7 +1,7 @@
 #ifndef LASER_SLAM_LASER_TRACK_HPP_
 #define LASER_SLAM_LASER_TRACK_HPP_
 
-#include <iostream>
+#include <mutex>
 
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/ExpressionFactor.h>
@@ -20,7 +20,7 @@ class LaserTrack {
   LaserTrack() {};
 
   /// \brief Constructor.
-  explicit LaserTrack(const LaserTrackParams& parameters);
+  explicit LaserTrack(const LaserTrackParams& parameters, unsigned int laser_track_id = 0u);
 
   ~LaserTrack() {};
 
@@ -30,8 +30,10 @@ class LaserTrack {
   /// \brief Process a new laser scan in laser frame.
   void processLaserScan(const LaserScan& scan);
 
-  /// \brief Process a new loop closure.
-  void processLoopClosure(const RelativePose& loop_closure);
+  void processPoseAndLaserScan(const Pose& pose, const LaserScan& in_scan,
+                               gtsam::NonlinearFactorGraph* newFactors = NULL,
+                               gtsam::Values* newValues = NULL,
+                               bool* is_prior = NULL);
 
   // Accessing the laser data
   /// \brief Get the point cloud of the last laser scan.
@@ -43,6 +45,9 @@ class LaserTrack {
 
   /// \brief Get one local cloud in world frame.
   void getLocalCloudInWorldFrame(const Time& timestamp, DataPoints* out_point_cloud) const;
+
+  /// \brief Get all laser scans.
+  const std::vector<LaserScan>& getLaserScans() const;
 
   /// \brief Get the trajectory.
   void getTrajectory(Trajectory* trajectory) const;
@@ -98,14 +103,34 @@ class LaserTrack {
                                         const gtsam::Values& values);
 
   /// \brief Get the number of registered laser scans.
-  size_t getNumScans() const { return laser_scans_.size(); };
+  size_t getNumScans() {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return laser_scans_.size();
+  };
 
   /// \brief Print the underlying trajectory -- only for debugging.
-  void printTrajectory() const { trajectory_.print("Laser track trajectory"); };
+  void printTrajectory() {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    trajectory_.print("Laser track trajectory");
+  };
 
   // Find nearest pose to a givent time.
   // TODO: Make obsolete?
   Pose findNearestPose(const Time& timestamp_ns) const;
+
+  void buildSubMapAroundTime(const curves::Time& time_ns,
+                             const unsigned int sub_maps_radius,
+                             DataPoints* submap_out) const;
+
+  gtsam::Expression<SE3> getValueExpression(const curves::Time& time_ns) {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return trajectory_.getValueExpression(time_ns);
+  };
+
+  SE3 evaluate(const curves::Time& time_ns) const {
+    std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+    return trajectory_.evaluate(time_ns);
+  }
 
  private:
   typedef curves::DiscreteSE3Curve CurveType;
@@ -116,16 +141,17 @@ class LaserTrack {
                                 gtsam::noiseModel::Base::shared_ptr noise_model,
                                 const bool fix_first_node = false) const;
 
+  // Make a pose measurement factor.
+  gtsam::ExpressionFactor<SE3>
+  makeMeasurementFactor(const Pose& pose_measurement,
+                        gtsam::noiseModel::Base::shared_ptr noise_model) const;
+
   // Compute rigid ICP transformations according to the selected strategy.
   void computeICPTransformations();
 
   // Compute ICP transformation between the last local scan to a concatenation of the
   // previous scans.
-  void local_scan_to_sub_map();
-
-  // Compute ICP transformations between the last local scan a set of the
-  // previous scans.
-  void local_scan_to_local_scans();
+  void localScanToSubMap();
 
   // Get the pose measurements at a given time.
   SE3 getPoseMeasurement(const Time& timestamp_ns) const { return findPose(timestamp_ns).T_w; };
@@ -146,14 +172,10 @@ class LaserTrack {
   // TODO(Renaud): Move this to curves.
   Key extendTrajectory(const Time& timestamp_ns, const SE3& value);
 
-  // Convert a libpointmatcher transformation matrix to a minkindr SE3.
-  SE3 convertTransformationMatrixToSE3(
-      const PointMatcher::TransformationParameters& transformation_matrix) const;
-
   std::vector<LaserScan>::const_iterator getIteratorToScanAtTime(
       const curves::Time& time_ns) const;
 
-  void buildSubMapAroundTime(const curves::Time& time_ns, DataPoints* submap_out) const;
+  unsigned int laser_track_id_;
 
   // TODO move pose_measurements_ to the Trajectory type.
   // Pose measurements in world frame.
@@ -174,6 +196,9 @@ class LaserTrack {
   // Underlying trajectory.
   CurveType trajectory_;
 
+  // TODO replace by standard mutex?
+  mutable std::recursive_mutex full_laser_track_mutex_;
+
   // Covariance matrices.
   std::vector<Covariance> covariances_;
 
@@ -185,6 +210,11 @@ class LaserTrack {
 
   // Libpointmatcher rigid transformation.
   PointMatcher::Transformation* rigid_transformation_;
+
+  // Noise models.
+  gtsam::noiseModel::Base::shared_ptr prior_noise_model_;
+  gtsam::noiseModel::Base::shared_ptr odometry_noise_model_;
+  gtsam::noiseModel::Base::shared_ptr icp_noise_model_;
 
   // Parameters.
   LaserTrackParams params_;

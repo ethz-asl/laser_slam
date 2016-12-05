@@ -202,4 +202,9 @@ std::shared_ptr<LaserTrack> IncrementalEstimator::getLaserTrack(unsigned int las
   return laser_tracks_[laser_track_id];
 }
 
+std::vector<std::shared_ptr<LaserTrack> > IncrementalEstimator::getAllLaserTracks() {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  return laser_tracks_;
+}
+
 } // namespace laser_slam

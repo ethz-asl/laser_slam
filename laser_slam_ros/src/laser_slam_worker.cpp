@@ -325,6 +325,7 @@ Time LaserSlamWorker::curveTimeToRosTime(const Time& timestamp_ns) const {
 
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   laser_slam::Pose current_pose = laser_track_->getCurrentPose();
 
   PclPoint current_position;

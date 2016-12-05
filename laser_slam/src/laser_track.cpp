@@ -271,7 +271,7 @@ void LaserTrack::getTrajectory(Trajectory* trajectory) const {
 
 const std::vector<LaserScan>& LaserTrack::getLaserScans() const {
   std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
-  return &laser_scans_;
+  return laser_scans_;
 }
 
 void LaserTrack::getCovariances(std::vector<Covariance>* out_covariances) const {

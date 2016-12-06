@@ -103,7 +103,7 @@ static laser_slam::LaserTrackParams getLaserTrackParams(const ros::NodeHandle& n
   nh.getParam(ns + "/nscan_in_sub_map", params.nscan_in_sub_map);
   nh.getParam(ns + "/save_icp_results", params.save_icp_results);
 
-
+  nh.getParam(ns + "/force_priors", params.force_priors);
   return params;
 }
 

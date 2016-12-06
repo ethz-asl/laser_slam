@@ -1,5 +1,8 @@
 #include "laser_slam/incremental_estimator.hpp"
 
+#include <algorithm>
+#include <utility>
+
 #include <gtsam/nonlinear/GaussNewtonOptimizer.h>
 
 using namespace gtsam;
@@ -147,21 +150,28 @@ Values IncrementalEstimator::estimateAndRemove(
     const gtsam::Values& new_values,
     const std::vector<unsigned int>& affected_worker_ids) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  
   Clock clock;
+  CHECK_EQ(affected_worker_ids.size(), 2u);
 
   // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
-  for (const auto& worker_id: affected_worker_ids) {
-    if (!factor_indices_to_remove_.empty()) {
-      std::vector<WorkerIdFactorIndicePair>::iterator it = factor_indices_to_remove_.begin();
-      bool found = false;
-      while (it != factor_indices_to_remove_.end() && !found) {
-        if (it->first == worker_id) {
-          found = true;
-          factor_indices_to_remove.push_back(it->second);
-          it = factor_indices_to_remove_.erase(it);
-        }
-      }
+  if (affected_worker_ids.at(0u) != affected_worker_ids.at(1u)) {
+    // Remove the prior of the worker with the largest ID if not already removed.
+    unsigned int worker_id_to_remove = std::max(affected_worker_ids.at(0u),
+                                                affected_worker_ids.at(1u));
+    if (std::find(worker_ids_with_removed_prior_.begin(),
+                  worker_ids_with_removed_prior_.end(), worker_id_to_remove) !=
+                      worker_ids_with_removed_prior_.end()) {
+      worker_id_to_remove = std::min(affected_worker_ids.at(0u),
+                                     affected_worker_ids.at(1u));
+    }
+
+    CHECK_LT(factor_indices_to_remove_.count(worker_id_to_remove), 2u);
+    if (factor_indices_to_remove_.count(worker_id_to_remove) == 1u) {
+      factor_indices_to_remove.push_back(factor_indices_to_remove_.at(worker_id_to_remove));
+      factor_indices_to_remove_.erase(worker_id_to_remove);
+      worker_ids_with_removed_prior_.push_back(worker_id_to_remove);
     }
   }
 
@@ -185,8 +195,8 @@ gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGr
 
   CHECK_EQ(update_result.newFactorsIndices.size(), 1u);
   if (worker_id > 0u) {
-    factor_indices_to_remove_.push_back(WorkerIdFactorIndicePair(
-        worker_id, update_result.newFactorsIndices.at(0u)));
+    factor_indices_to_remove_.insert(
+        std::make_pair(worker_id, update_result.newFactorsIndices.at(0u)));
   }
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();

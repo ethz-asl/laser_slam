@@ -2,6 +2,7 @@
 #define LASER_SLAM_INCREMENTAL_ESTIMATOR_HPP_
 
 #include <mutex>
+#include <unordered_map>
 
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -67,8 +68,8 @@ class IncrementalEstimator {
 
   gtsam::noiseModel::Base::shared_ptr loop_closure_noise_model_;
 
-  typedef std::pair<unsigned int, size_t> WorkerIdFactorIndicePair;
-  std::vector<WorkerIdFactorIndicePair> factor_indices_to_remove_;
+  std::unordered_map<unsigned int, size_t> factor_indices_to_remove_;
+  std::vector<unsigned int> worker_ids_with_removed_prior_;
 
   // Parameters.
   EstimatorParams params_;

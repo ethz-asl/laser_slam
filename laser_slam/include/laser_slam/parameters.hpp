@@ -17,6 +17,8 @@ struct LaserTrackParams {
   bool use_icp_factors;
   int nscan_in_sub_map;
   bool save_icp_results;
+
+  bool force_priors;
 }; // struct LaserTrackParams
 
 struct EstimatorParams {

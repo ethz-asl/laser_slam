@@ -161,13 +161,15 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
     laser_scans_.push_back(scan);
 
     if (newFactors != NULL) {
-      Pose new_pose = pose;
+      Pose prior_pose = pose;
       // Add a prior on the first key.
-      if (laser_track_id_ == 1u) {
-        SE3 offset_transform(SE3::Rotation(1.0, 0.0, 0.0, 0.0), SE3::Position(25.0, 0.0, 0.0));
-        new_pose.T_w = offset_transform * new_pose.T_w;
+      if (params_.force_priors) {
+        prior_pose.T_w = SE3(SE3::Rotation(1.0, 0.0, 0.0, 0.0),
+                             SE3::Position(-kDistanceBetweenPriorPoses_m * laser_track_id_,
+                                           0.0, 0.0));
       }
-      newFactors->push_back(makeMeasurementFactor(new_pose, prior_noise_model_));
+
+      newFactors->push_back(makeMeasurementFactor(prior_pose, prior_noise_model_));
     }
     if (is_prior != NULL) {
       *is_prior = true;

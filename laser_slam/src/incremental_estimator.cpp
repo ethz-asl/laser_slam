@@ -52,7 +52,9 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
+  if (loop_closure.track_id_a == loop_closure.track_id_b) {
+    CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
+  }
   CHECK_GE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMinTime()) <<
       "Loop closure has invalid time.";
   CHECK_LE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMaxTime()) <<

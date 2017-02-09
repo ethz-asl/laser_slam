@@ -52,7 +52,6 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
   CHECK_GE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMinTime()) <<
       "Loop closure has invalid time.";
   CHECK_LE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMaxTime()) <<
@@ -175,12 +174,16 @@ Values IncrementalEstimator::estimateAndRemove(
     }
   }
 
+  //isam2_.saveGraph("/tmp/graph_before");
+
   isam2_.update(new_factors, new_values, factor_indices_to_remove).print();
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
+
+  //isam2_.saveGraph("/tmp/graph_after");
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";

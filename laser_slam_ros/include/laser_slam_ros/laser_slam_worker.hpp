@@ -51,6 +51,9 @@ class LaserSlamWorker {
 
   void getOdometryTrajectory(laser_slam::Trajectory* out_trajectory) const;
 
+  void updateLocalMap(const laser_slam::SE3& last_pose_before_update,
+                      const laser_slam::Time last_pose_before_update_timestamp_ns);
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);

@@ -421,4 +421,16 @@ void LaserSlamWorker::getOdometryTrajectory(Trajectory* out_trajectory) const {
   laser_track_->getOdometryTrajectory(out_trajectory);
 }
 
+void LaserSlamWorker::updateLocalMap(const SE3& last_pose_before_update,
+                                     const laser_slam::Time last_pose_before_update_timestamp_ns) {
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  Trajectory new_trajectory;
+  laser_track_->getTrajectory(&new_trajectory);
+  SE3 new_last_pose = new_trajectory.at(last_pose_before_update_timestamp_ns);
+
+  const Eigen::Matrix4f transform_matrix = (new_last_pose * last_pose_before_update.inverse()).
+      getTransformationMatrix().cast<float>();
+  pcl::transformPointCloud(local_map_, local_map_, transform_matrix);
+}
+
 } // namespace laser_slam_ros

@@ -36,7 +36,6 @@ void LaserSlamWorker::init(
     ros::NodeHandle& nh, const LaserSlamWorkerParams& params,
     std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator,
     unsigned int worker_id) {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   params_ = params;
   incremental_estimator_ = incremental_estimator;
   worker_id_ = worker_id;
@@ -59,8 +58,8 @@ void LaserSlamWorker::init(
 
   // Setup services.
   get_laser_track_srv_ = nh.advertiseService(
-        params_.get_laser_track_srv_topic,
-        &LaserSlamWorker::getLaserTracksServiceCall, this);
+      params_.get_laser_track_srv_topic,
+      &LaserSlamWorker::getLaserTracksServiceCall, this);
 
   voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
                             params_.voxel_size_m);
@@ -89,7 +88,6 @@ void LaserSlamWorker::init(
 }
 
 void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in) {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   if (tf_listener_.waitForTransform(params_.odom_frame, params_.sensor_frame,
                                     cloud_msg_in.header.stamp, ros::Duration(kTimeout_s))) {
     // Get the tf transform.
@@ -149,12 +147,17 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       matrix.resize(4, 4);
       matrix = T_w_odom.getTransformationMatrix().cast<float>();
 
+      {
+        std::lock_guard<std::recursive_mutex> lock_world_to_odom(world_to_odom_mutex_);
+        world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
+            matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
+      }
+
       publishTrajectories();
 
       // Get the last cloud in world frame.
       DataPoints new_fixed_cloud;
       laser_track_->getLocalCloudInWorldFrame(laser_track_->getMaxTime(), &new_fixed_cloud);
-
 
       // Transform the cloud in sensor frame
       //TODO(Renaud) move to a transformPointCloud() fct.
@@ -181,6 +184,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       // Add the local scans to the full point cloud.
       if (params_.create_filtered_map) {
         if (new_fixed_cloud_pcl.size() > 0u) {
+          std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
           if (local_map_.size() > 0u) {
             local_map_ += new_fixed_cloud_pcl;
           } else {
@@ -188,11 +192,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
           }
         }
       }
-
-      std::lock_guard<std::recursive_mutex> lock_world_to_odom(world_to_odom_mutex_);
-      world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
-          matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
-
     }
   } else {
     ROS_WARN_STREAM("[SegMapper] Timeout while waiting between " + params_.odom_frame  +
@@ -216,9 +215,9 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
       scan_stamp.fromNSec(curveTimeToRosTime(scan.time_ns));
       // Fill response.
       response.laser_scans.push_back(
-              PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan.scan,
-                                                                 params_.sensor_frame,
-                                                                 scan_stamp));
+          PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan.scan,
+                                                             params_.sensor_frame,
+                                                             scan_stamp));
       tf_transform = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
           trajectory.at(scan.time_ns).getTransformationMatrix().cast<float>(),
           params_.world_frame,
@@ -233,7 +232,6 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
 
 void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
                                         const ros::Publisher& publisher) const {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   nav_msgs::Path traj_msg;
   traj_msg.header.frame_id = params_.world_frame;
   Time traj_time = curveTimeToRosTime(trajectory.rbegin()->first);
@@ -258,14 +256,10 @@ void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
 }
 
 void LaserSlamWorker::publishMap() {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   // TODO make thread safe.
   if (local_map_.size() > 0) {
     PointCloud filtered_map;
     getFilteredMap(&filtered_map);
-
-    // Indicate that a new source cloud is ready to be used for localization and loop-closure.
-    source_cloud_ready_ = true;
 
     //maximumNumberPointsFilter(&filtered_map);
     //    if (params_.publish_full_map) {
@@ -275,7 +269,10 @@ void LaserSlamWorker::publishMap() {
     //    }
     if (params_.publish_local_map) {
       sensor_msgs::PointCloud2 msg;
-      convert_to_point_cloud_2_msg(local_map_filtered_, params_.world_frame, &msg);
+      {
+        std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
+        convert_to_point_cloud_2_msg(local_map_filtered_, params_.world_frame, &msg);
+      }
       local_map_pub_.publish(msg);
     }
     //    if (params_.publish_distant_map) {
@@ -287,12 +284,9 @@ void LaserSlamWorker::publishMap() {
 }
 
 void LaserSlamWorker::publishTrajectories() {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
   publishTrajectory(trajectory, trajectory_pub_);
-  //  incremental_estimator_->getOdometryTrajectory(&trajectory);
-  //  publishTrajectory(trajectory, odometry_trajectory_pub_);
 }
 
 // TODO can we move?
@@ -326,7 +320,6 @@ Time LaserSlamWorker::curveTimeToRosTime(const Time& timestamp_ns) const {
 
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   laser_slam::Pose current_pose = laser_track_->getCurrentPose();
 
   PclPoint current_position;
@@ -335,9 +328,13 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   current_position.z = current_pose.T_w.getPosition()[2];
 
   // Apply the cylindrical filter on the local map and get a copy.
-  PointCloud local_map = local_map_;
-  applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
-                         40, false, &local_map_);
+  PointCloud local_map;
+  {
+    std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
+    local_map = local_map_;
+    applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
+                           40, false, &local_map_);
+  }
 
   // Apply a voxel filter.
   laser_slam::Clock clock;
@@ -373,9 +370,13 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, true, &new_distant_map);
 
-    local_map_filtered_ = local_map_filtered;
+    {
+      std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
+      local_map_filtered_ = local_map_filtered;
+    }
 
     // Add the new_distant_map to the distant_map_.
+    // TODO add lock if used
     if (distant_map_.size() > 0u) {
       distant_map_ += new_distant_map;
     } else {
@@ -396,13 +397,13 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
 }
 
 void LaserSlamWorker::getLocalMapFiltered(PointCloud* local_map_filtered) {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   CHECK_NOTNULL(local_map_filtered);
+  std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
   *local_map_filtered = local_map_filtered_;
 }
 
 void LaserSlamWorker::clearLocalMap() {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
   local_map_.clear();
 }
 
@@ -413,24 +414,24 @@ tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
 }
 
 void LaserSlamWorker::getTrajectory(Trajectory* out_trajectory) const {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   laser_track_->getTrajectory(out_trajectory);
 }
 
 void LaserSlamWorker::getOdometryTrajectory(Trajectory* out_trajectory) const {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   laser_track_->getOdometryTrajectory(out_trajectory);
 }
 
 void LaserSlamWorker::updateLocalMap(const SE3& last_pose_before_update,
                                      const laser_slam::Time last_pose_before_update_timestamp_ns) {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+
   Trajectory new_trajectory;
   laser_track_->getTrajectory(&new_trajectory);
+
   SE3 new_last_pose = new_trajectory.at(last_pose_before_update_timestamp_ns);
 
   const Eigen::Matrix4f transform_matrix = (new_last_pose * last_pose_before_update.inverse()).
       getTransformationMatrix().cast<float>();
+  std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
   pcl::transformPointCloud(local_map_, local_map_, transform_matrix);
 }
 

@@ -85,8 +85,9 @@ class LaserSlamWorker {
   std::shared_ptr<laser_slam::LaserTrack> laser_track_;
 
   // TODO use standard mutex?
-  mutable std::recursive_mutex full_class_mutex_;
   mutable std::recursive_mutex world_to_odom_mutex_;
+  mutable std::recursive_mutex local_map_filtered_mutex_;
+  mutable std::recursive_mutex local_map_mutex_;
 
   // Subscribers.
   ros::Subscriber scan_sub_;

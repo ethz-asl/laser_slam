@@ -192,7 +192,7 @@ Values IncrementalEstimator::estimateAndRemove(
 gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
                                                   const gtsam::Values& new_values,
                                                   const unsigned int worker_id) {
-
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   ISAM2Result update_result = isam2_.update(new_factors, new_values);
 
   CHECK_EQ(update_result.newFactorsIndices.size(), 1u);

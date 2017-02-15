@@ -149,9 +149,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       matrix.resize(4, 4);
       matrix = T_w_odom.getTransformationMatrix().cast<float>();
 
-      world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
-          matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
-
       publishTrajectories();
 
       // Get the last cloud in world frame.
@@ -191,6 +188,10 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
           }
         }
       }
+
+      std::lock_guard<std::recursive_mutex> lock_world_to_odom(world_to_odom_mutex_);
+      world_to_odom_ = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
+          matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
 
     }
   } else {
@@ -406,7 +407,7 @@ void LaserSlamWorker::clearLocalMap() {
 }
 
 tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
-  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+  std::lock_guard<std::recursive_mutex> lock_world_to_odom(world_to_odom_mutex_);
   tf::StampedTransform world_to_odom = world_to_odom_;
   return world_to_odom;
 }

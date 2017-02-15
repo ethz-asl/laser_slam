@@ -86,6 +86,7 @@ class LaserSlamWorker {
 
   // TODO use standard mutex?
   mutable std::recursive_mutex full_class_mutex_;
+  mutable std::recursive_mutex world_to_odom_mutex_;
 
   // Subscribers.
   ros::Subscriber scan_sub_;

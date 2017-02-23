@@ -207,8 +207,11 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
 
     if (newFactors != NULL) {
       // Add the odometry and ICP factors.
-      newFactors->push_back(makeRelativeMeasurementFactor(relative_measurement,
-                                                          odometry_noise_model_));
+      if (params_.use_odom_factors) {
+        newFactors->push_back(makeRelativeMeasurementFactor(relative_measurement,
+                                                            odometry_noise_model_));
+      }
+
       if (params_.use_icp_factors) {
         newFactors->push_back(makeRelativeMeasurementFactor(
             icp_transformations_[icp_transformations_.size()-1u], icp_noise_model_));
@@ -285,9 +288,23 @@ void LaserTrack::getCovariances(std::vector<Covariance>* out_covariances) const 
 Pose LaserTrack::getCurrentPose() const {
   std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
   Pose current_pose;
-  current_pose.time_ns = getMaxTime();
-  current_pose.T_w = trajectory_.evaluate(current_pose.time_ns);
+  if (!trajectory_.isEmpty()) {
+    current_pose.time_ns = getMaxTime();
+    current_pose.T_w = trajectory_.evaluate(current_pose.time_ns);
+  }
   return current_pose;
+}
+
+Pose LaserTrack::getPreviousPose() const {
+  std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+  Pose previous_pose;
+  if (trajectory_.size() > 1u) {
+    std::vector<Time> trajectory_times;
+    trajectory_.getCurveTimes(&trajectory_times);
+    previous_pose.time_ns = *(++trajectory_times.rbegin());
+    previous_pose.T_w = trajectory_.evaluate(previous_pose.time_ns);
+  }
+  return previous_pose;
 }
 
 void LaserTrack::getOdometryTrajectory(Trajectory* trajectory) const {
@@ -476,9 +493,16 @@ void LaserTrack::localScanToSubMap() {
       trajectory_.evaluate(icp_transformation.time_b_ns);
   transformation_matrix = initial_guess.getTransformationMatrix().cast<float>();
 
+  PointMatcher::TransformationParameters icp_solution = transformation_matrix;
   // Compute the ICP solution.
-  PointMatcher::TransformationParameters icp_solution = icp_.compute(last_scan.scan, sub_map,
-                                                                     transformation_matrix);
+  try {
+    icp_solution = icp_.compute(last_scan.scan, sub_map, transformation_matrix);
+  }
+
+  catch (PointMatcher::ConvergenceError error)
+  {
+    //LOG(INFO) << "ICP failed to converge: " << error.what();
+  }
 
   if (params_.save_icp_results) {
     last_scan.scan.save("/tmp/last_scan.vtk");

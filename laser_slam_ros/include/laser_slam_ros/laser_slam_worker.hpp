@@ -132,6 +132,8 @@ class LaserSlamWorker {
   laser_slam::SE3 last_pose_;
   bool last_pose_set_ = false;
 
+  laser_slam::Pose last_pose_sent_to_laser_track_;
+
   pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
 
   tf::StampedTransform world_to_odom_;

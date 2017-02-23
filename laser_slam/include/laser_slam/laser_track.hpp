@@ -61,6 +61,8 @@ class LaserTrack {
   /// \brief Get the current estimate.
   Pose getCurrentPose() const;
 
+  Pose getPreviousPose() const;
+
   /// \brief Get the first valid time of the trajectory.
   Time getMinTime() const;
 

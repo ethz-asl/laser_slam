@@ -123,8 +123,37 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         gtsam::NonlinearFactorGraph new_factors;
         gtsam::Values new_values;
         bool is_prior;
-        laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
-                                              &new_factors, &new_values, &is_prior);
+        if (params_.use_odometry_information) {
+          laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
+                                                &new_factors, &new_values, &is_prior);
+        } else {
+          Pose new_pose;
+
+          Time new_pose_time_ns = tfTransformToPose(tf_transform).time_ns;
+
+          if (laser_track_->getNumScans() > 2u) {
+            Pose current_pose = laser_track_->getCurrentPose();
+
+            if (current_pose.time_ns > new_pose_time_ns - current_pose.time_ns) {
+              Time previous_pose_time = current_pose.time_ns -
+                  (new_pose_time_ns - current_pose.time_ns);
+              if (previous_pose_time >= laser_track_->getMinTime() &&
+                  previous_pose_time <= laser_track_->getMaxTime()) {
+                SE3 previous_pose = laser_track_->evaluate(previous_pose_time);
+                new_pose.T_w = last_pose_sent_to_laser_track_.T_w *
+                    previous_pose.inverse()  * current_pose.T_w ;
+                new_pose.T_w = SE3(SO3::fromApproximateRotationMatrix(
+                    new_pose.T_w.getRotation().getRotationMatrix()), new_pose.T_w.getPosition());
+              }
+            }
+          }
+
+          new_pose.time_ns = new_pose_time_ns;
+          laser_track_->processPoseAndLaserScan(new_pose, new_scan,
+                                                &new_factors, &new_values, &is_prior);
+
+          last_pose_sent_to_laser_track_ = new_pose;
+        }
 
         // Process the new values and factors.
         gtsam::Values result;

@@ -38,12 +38,12 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
   }
 
   Eigen::Matrix<double,6,1> first_association_noise_model;
-  first_association_noise_model[0] = 0.005;
-  first_association_noise_model[1] = 0.005;
-  first_association_noise_model[2] = 0.005;
-  first_association_noise_model[3] = 0.0015;
-  first_association_noise_model[4] = 0.0015;
-  first_association_noise_model[5] = 0.0015;
+  first_association_noise_model[0] = 0.05;
+  first_association_noise_model[1] = 0.05;
+  first_association_noise_model[2] = 0.05;
+  first_association_noise_model[3] = 0.015;
+  first_association_noise_model[4] = 0.015;
+  first_association_noise_model[5] = 0.015;
   first_association_noise_model_ =
       gtsam::noiseModel::Diagonal::Sigmas(first_association_noise_model);
 

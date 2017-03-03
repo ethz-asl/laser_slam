@@ -181,6 +181,20 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
       PointCloud new_fixed_cloud_pcl = lpmToPcl(new_fixed_cloud);
 
+      if (params_.remove_ground_from_local_map) {
+        const double robot_height_m = current_pose.T_w.getPosition()(2);
+        PointCloud new_fixed_cloud_no_ground;
+        for (size_t i = 0u; i < new_fixed_cloud_pcl.size(); ++i) {
+          if (new_fixed_cloud_pcl.points[i].z > robot_height_m -
+              params_.ground_distance_to_robot_center_m) {
+            new_fixed_cloud_no_ground.push_back(new_fixed_cloud_pcl.points[i]);
+          }
+        }
+        new_fixed_cloud_no_ground.width = 1;
+        new_fixed_cloud_no_ground.height = new_fixed_cloud_no_ground.points.size();
+        new_fixed_cloud_pcl = new_fixed_cloud_no_ground;
+      }
+
       // Add the local scans to the full point cloud.
       if (params_.create_filtered_map) {
         if (new_fixed_cloud_pcl.size() > 0u) {

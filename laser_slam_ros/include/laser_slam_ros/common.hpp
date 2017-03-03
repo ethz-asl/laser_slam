@@ -25,6 +25,9 @@ struct LaserSlamWorkerParams {
   double voxel_size_m;
   int minimum_point_number_per_voxel;
 
+  bool remove_ground_from_local_map = false;
+  double ground_distance_to_robot_center_m;
+
   // Frames.
   std::string odom_frame;
   std::string sensor_frame;
@@ -57,6 +60,9 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/minimum_distance_to_add_pose", params.minimum_distance_to_add_pose);
   nh.getParam(ns + "/voxel_size_m", params.voxel_size_m);
   nh.getParam(ns + "/minimum_point_number_per_voxel", params.minimum_point_number_per_voxel);
+
+  nh.getParam(ns + "/remove_ground_from_local_map", params.remove_ground_from_local_map);
+  nh.getParam(ns + "/ground_distance_to_robot_center_m", params.ground_distance_to_robot_center_m);
 
   nh.getParam(ns + "/odom_frame", params.odom_frame);
   nh.getParam(ns + "/sensor_frame", params.sensor_frame);

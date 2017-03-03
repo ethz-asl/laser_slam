@@ -39,16 +39,28 @@ class IncrementalEstimator {
 
   // Build the factor graph and estimate the trajectory.
   gtsam::Values estimate(const gtsam::NonlinearFactorGraph& new_factors,
-                         const gtsam::Values& new_values);
+                         const gtsam::Values& new_values,
+                         laser_slam::Time timestamp_ns = 0u);
 
   gtsam::Values estimateAndRemove(const gtsam::NonlinearFactorGraph& new_factors,
                                   const gtsam::NonlinearFactorGraph& new_associations_factors,
                                   const gtsam::Values& new_values,
-                                  const std::vector<unsigned int>& affected_worker_ids);
+                                  const std::vector<unsigned int>& affected_worker_ids,
+                                  laser_slam::Time timestamp_ns = 0u);
 
   gtsam::Values registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
                               const gtsam::Values& new_values,
                               const unsigned int worker_id);
+
+  void getEstimationTimes(std::map<laser_slam::Time, double>* estimation_times) const {
+    CHECK_NOTNULL(estimation_times);
+    *estimation_times = estimation_times_;
+  }
+
+  /*void getEstimationAndRemoveTimes(std::vector<double>* estimation_times) const {
+    CHECK_NOTNULL(estimation_times);
+    *estimation_times = estimation_and_remove_times_;
+  }*/
 
  private:
   unsigned int n_laser_slam_workers_;
@@ -73,6 +85,10 @@ class IncrementalEstimator {
 
   std::unordered_map<unsigned int, size_t> factor_indices_to_remove_;
   std::vector<unsigned int> worker_ids_with_removed_prior_;
+
+  std::map<laser_slam::Time, double> estimation_times_;
+  //std::vector<double> estimation_and_remove_times_;
+
 
   // Parameters.
   EstimatorParams params_;

@@ -137,7 +137,8 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
   affected_worker_ids.push_back(loop_closure.track_id_b);
   Values new_values;
   Values result = estimateAndRemove(new_factors, new_associations_factors,
-                                    new_values, affected_worker_ids);
+                                    new_values, affected_worker_ids,
+                                    updated_loop_closure.time_b_ns);
 
   LOG(INFO) << "Updating the trajectories after LC.";
   for (auto& track: laser_tracks_) {
@@ -147,7 +148,8 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 }
 
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
-                                      const gtsam::Values& new_values) {
+                                      const gtsam::Values& new_values,
+                                      laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Clock clock;
   // Update and force relinearization.
@@ -160,6 +162,7 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
@@ -167,7 +170,8 @@ Values IncrementalEstimator::estimateAndRemove(
     const gtsam::NonlinearFactorGraph& new_factors,
     const gtsam::NonlinearFactorGraph& new_associations_factors,
     const gtsam::Values& new_values,
-    const std::vector<unsigned int>& affected_worker_ids) {
+    const std::vector<unsigned int>& affected_worker_ids,
+    laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   
   Clock clock;
@@ -206,6 +210,8 @@ Values IncrementalEstimator::estimateAndRemove(
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  //estimation_and_remove_times_.emplace(timestamp_ns, clock.getRealTime());
+  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 

@@ -160,7 +160,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         if (is_prior) {
           result = incremental_estimator_->registerPrior(new_factors, new_values, worker_id_);
         } else {
-          result = incremental_estimator_->estimate(new_factors, new_values);
+          result = incremental_estimator_->estimate(new_factors, new_values, new_scan.time_ns);
         }
 
         // Update the trajectory.
@@ -484,5 +484,72 @@ void LaserSlamWorker::updateLocalMap(const SE3& last_pose_before_update,
     pcl::transformPointCloud(local_map_filtered_, local_map_filtered_, transform_matrix);
   }
 }
+
+void LaserSlamWorker::displayTimings() const {
+  /*std::vector<double> scan_matching_times;
+  laser_track_->getScanMatchingTimes(&scan_matching_times);
+
+  double mean, sigma;
+  getMeanAndSigma(scan_matching_times, &mean, &sigma);
+  LOG(INFO) << "Scan matching times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;
+
+  std::vector<double> estimation_times;
+  incremental_estimator_->getEstimationTimes(&estimation_times);
+  getMeanAndSigma(estimation_times, &mean, &sigma);
+  LOG(INFO) << "Estimation times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;
+
+  incremental_estimator_->getEstimationAndRemoveTimes(&estimation_times);
+  getMeanAndSigma(estimation_times, &mean, &sigma);
+  LOG(INFO) << "Estimation and remove times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;
+
+*/
+}
+
+void LaserSlamWorker::saveTimings() const {
+  std::map<Time, double> scan_matching_times;
+  Eigen::MatrixXd matrix;
+  laser_track_->getScanMatchingTimes(&scan_matching_times);
+  toEigenMatrixXd(scan_matching_times, &matrix);
+  writeEigenMatrixXdCSV(matrix, "/tmp/timing_icp_" + std::to_string(worker_id_) + ".csv");
+
+  std::map<Time, double> estimation_times;
+  incremental_estimator_->getEstimationTimes(&estimation_times);
+  toEigenMatrixXd(estimation_times, &matrix);
+  writeEigenMatrixXdCSV(matrix, "/tmp/timing_estimation.csv");
+
+  Trajectory traj;
+  laser_track_->getTrajectory(&traj);
+  matrix.resize(traj.size(), 4);
+  unsigned int i = 0u;
+  for (const auto& pose: traj) {
+    matrix(i,0) = pose.first;
+    matrix(i,1) = pose.second.getPosition()(0);
+    matrix(i,2) = pose.second.getPosition()(1);
+    matrix(i,3) = pose.second.getPosition()(2);
+    ++i;
+  }
+  writeEigenMatrixXdCSV(matrix, "/tmp/trajectory_" + std::to_string(worker_id_) + ".csv");
+
+
+  /*double mean, sigma;
+  getMeanAndSigma(scan_matching_times, &mean, &sigma);
+  LOG(INFO) << "Scan matching times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;
+
+  std::vector<double> estimation_times;
+  incremental_estimator_->getEstimationTimes(&estimation_times);
+  getMeanAndSigma(estimation_times, &mean, &sigma);
+  LOG(INFO) << "Estimation times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;
+
+  incremental_estimator_->getEstimationAndRemoveTimes(&estimation_times);
+  getMeanAndSigma(estimation_times, &mean, &sigma);
+  LOG(INFO) << "Estimation and remove times for worker id " << worker_id_ <<
+      ": " << mean << " +/- " << sigma;*/
+}
+
 
 } // namespace laser_slam_ros

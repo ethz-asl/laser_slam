@@ -124,6 +124,9 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
                                          gtsam::Values* newValues,
                                          bool* is_prior) {
   std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
+
+  Clock scan_matching_clock;
+
   if (pose.time_ns != in_scan.time_ns) {
     LOG(WARNING) << "The time of the pose to add (" << pose.time_ns << ") does not match the " <<
         "time of the scan to add (" << in_scan.time_ns << ").";
@@ -165,8 +168,8 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
       // Add a prior on the first key.
       if (params_.force_priors) {
         prior_pose.T_w = SE3(SE3::Rotation(1.0, 0.0, 0.0, 0.0),
-                             SE3::Position(-kDistanceBetweenPriorPoses_m * laser_track_id_,
-                                           0.0, 0.0));
+                             SE3::Position(0.0,
+                                           kDistanceBetweenPriorPoses_m * laser_track_id_, 0.0));
       }
 
       newFactors->push_back(makeMeasurementFactor(prior_pose, prior_noise_model_));
@@ -204,6 +207,9 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
     if (params_.use_icp_factors) {
       computeICPTransformations();
     }
+
+    scan_matching_clock.takeTime();
+    scan_matching_times_.emplace(scan.time_ns, scan_matching_clock.getRealTime());
 
     if (newFactors != NULL) {
       // Add the odometry and ICP factors.

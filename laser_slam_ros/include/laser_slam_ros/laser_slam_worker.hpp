@@ -56,6 +56,10 @@ class LaserSlamWorker {
 
   void setLockScanCallback(bool new_state);
 
+  void displayTimings() const;
+
+  void saveTimings() const;
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);

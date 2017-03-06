@@ -61,6 +61,8 @@ class LaserTrack {
   /// \brief Get the current estimate.
   Pose getCurrentPose() const;
 
+  Pose getPreviousPose() const;
+
   /// \brief Get the first valid time of the trajectory.
   Time getMinTime() const;
 
@@ -130,6 +132,15 @@ class LaserTrack {
   SE3 evaluate(const curves::Time& time_ns) const {
     std::lock_guard<std::recursive_mutex> lock(full_laser_track_mutex_);
     return trajectory_.evaluate(time_ns);
+  }
+
+  void getScanMatchingTimes(std::map<laser_slam::Time, double>* scan_matching_times) const {
+    CHECK_NOTNULL(scan_matching_times);
+    *scan_matching_times = scan_matching_times_;
+  }
+
+  void saveTrajectory(const std::string& filename) const {
+    trajectory_.saveCurveTimesAndValues(filename);
   }
 
  private:
@@ -215,6 +226,8 @@ class LaserTrack {
   gtsam::noiseModel::Base::shared_ptr prior_noise_model_;
   gtsam::noiseModel::Base::shared_ptr odometry_noise_model_;
   gtsam::noiseModel::Base::shared_ptr icp_noise_model_;
+
+  std::map<laser_slam::Time, double> scan_matching_times_;
 
   // Parameters.
   LaserTrackParams params_;

@@ -62,6 +62,7 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+
   if (loop_closure.track_id_a == loop_closure.track_id_b) {
     CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
   }
@@ -202,6 +203,7 @@ Values IncrementalEstimator::estimateAndRemove(
   }
 
   isam2_.update(new_factors_to_add, new_values, factor_indices_to_remove).print();
+
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
   isam2_.update();

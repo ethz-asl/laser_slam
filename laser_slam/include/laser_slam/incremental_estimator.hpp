@@ -81,6 +81,8 @@ class IncrementalEstimator {
   std::unordered_map<unsigned int, size_t> factor_indices_to_remove_;
   std::vector<unsigned int> worker_ids_with_removed_prior_;
 
+  std::unordered_map<unsigned int, unsigned int> if_first_then_remove_second_;
+
   std::map<laser_slam::Time, double> estimation_times_;
 
 

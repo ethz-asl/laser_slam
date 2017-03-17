@@ -174,7 +174,7 @@ Values IncrementalEstimator::estimateAndRemove(
     const std::vector<unsigned int>& affected_worker_ids,
     laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  
+
   Clock clock;
   CHECK_EQ(affected_worker_ids.size(), 2u);
   gtsam::NonlinearFactorGraph new_factors_to_add = new_factors;
@@ -182,13 +182,34 @@ Values IncrementalEstimator::estimateAndRemove(
   std::vector<size_t> factor_indices_to_remove;
   if (affected_worker_ids.at(0u) != affected_worker_ids.at(1u)) {
     // Remove the prior of the worker with the largest ID if not already removed.
-    unsigned int worker_id_to_remove = std::max(affected_worker_ids.at(0u),
-                                                affected_worker_ids.at(1u));
+    const unsigned int max_id = std::max(affected_worker_ids.at(0u),
+                                         affected_worker_ids.at(1u));
+
+    const unsigned int min_id = std::min(affected_worker_ids.at(0u),
+                                         affected_worker_ids.at(1u));
+
+    unsigned int worker_id_to_remove = max_id;
+
+    if (min_id != 0u) {
+      if_first_then_remove_second_.emplace(worker_id_to_remove,
+                                           min_id);
+    }
+
     if (std::find(worker_ids_with_removed_prior_.begin(),
                   worker_ids_with_removed_prior_.end(), worker_id_to_remove) !=
                       worker_ids_with_removed_prior_.end()) {
       worker_id_to_remove = std::min(affected_worker_ids.at(0u),
                                      affected_worker_ids.at(1u));
+
+    }
+
+    if (factor_indices_to_remove_.count(worker_id_to_remove) != 1u) {
+      if (min_id == 0u) {
+        if (if_first_then_remove_second_.find(max_id) !=
+            if_first_then_remove_second_.end()) {
+          worker_id_to_remove = if_first_then_remove_second_.at(max_id);
+        }
+      }
     }
 
     CHECK_LT(factor_indices_to_remove_.count(worker_id_to_remove), 2u);

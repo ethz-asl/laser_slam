@@ -15,6 +15,7 @@ struct LaserTrackParams {
   std::string icp_configuration_file;
   std::string icp_input_filters_file;
   bool use_icp_factors;
+  bool use_odom_factors;
   int nscan_in_sub_map;
   bool save_icp_results;
 

@@ -229,6 +229,18 @@ static void loadEigenMatrixXdCSV(std::string file_name, Eigen::MatrixXd* matrix)
       n_cols << " cols.";
 }
 
+static void toEigenMatrixXd(std::map<Time, double> map_in, Eigen::MatrixXd* matrix_out) {
+  CHECK_NOTNULL(matrix_out);
+  matrix_out->resize(map_in.size(),2);
+
+  unsigned int i = 0u;
+  for (const auto& elem: map_in) {
+    (*matrix_out)(i,0) = elem.first;
+    (*matrix_out)(i,1) = elem.second;
+    ++i;
+  }
+}
+
 /// \brief Optimization result structure.
 struct OptimizationResult {
   /// \brief Number of optimizer iterations performed.
@@ -264,6 +276,27 @@ static double distanceBetweenTwoSE3(const SE3& pose1, const SE3& pose2) {
       (pose1.getPosition()(1) - pose2.getPosition()(1)) +
       (pose1.getPosition()(2) - pose2.getPosition()(2)) *
       (pose1.getPosition()(2) - pose2.getPosition()(2)));
+}
+
+static void getMeanAndSigma(std::vector<double> values, double* mean_out,
+                            double* sigma_out) {
+  CHECK_NOTNULL(mean_out);
+  CHECK_NOTNULL(sigma_out);
+  //LOG(INFO) << "values";
+  double sum = 0.0;
+  const double n = double(values.size());
+  for (const auto& value: values) {
+    //LOG(INFO) << "value " << value;
+    sum += value;
+  }
+  const double mean = sum / n;
+
+  double sum_of_squared_diff = 0.0;
+  for (const auto& value: values) {
+    sum_of_squared_diff += (mean - value) * (mean - value);
+  }
+  *mean_out = mean;
+  *sigma_out = std::sqrt(sum_of_squared_diff / n);
 }
 
 } // namespace laser_slam

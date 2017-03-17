@@ -37,6 +37,16 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
         gtsam::noiseModel::Diagonal::Sigmas(params_.loop_closure_noise_model);
   }
 
+  Eigen::Matrix<double,6,1> first_association_noise_model;
+  first_association_noise_model[0] = 0.05;
+  first_association_noise_model[1] = 0.05;
+  first_association_noise_model[2] = 0.05;
+  first_association_noise_model[3] = 0.015;
+  first_association_noise_model[4] = 0.015;
+  first_association_noise_model[5] = 0.015;
+  first_association_noise_model_ =
+      gtsam::noiseModel::Diagonal::Sigmas(first_association_noise_model);
+
   // Load the ICP configurations for adjusting the loop closure transformations.
   // TODO now using the same configuration as for the lidar odometry.
   std::ifstream ifs_icp_configurations(params_.laser_track_params.icp_configuration_file.c_str());
@@ -52,6 +62,10 @@ IncrementalEstimator::IncrementalEstimator(const EstimatorParams& parameters,
 
 void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
+
+  if (loop_closure.track_id_a == loop_closure.track_id_b) {
+    CHECK_LT(loop_closure.time_a_ns, loop_closure.time_b_ns) << "Loop closure has invalid time.";
+  }
   CHECK_GE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMinTime()) <<
       "Loop closure has invalid time.";
   CHECK_LE(loop_closure.time_a_ns, laser_tracks_[loop_closure.track_id_a]->getMaxTime()) <<
@@ -102,7 +116,7 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 
   LOG(INFO) << "Creating loop closure factor.";
 
-  NonlinearFactorGraph new_factors;
+  NonlinearFactorGraph new_factors, new_associations_factors;
   Expression<SE3> exp_T_w_b(laser_tracks_[loop_closure.track_id_b]->getValueExpression(
       updated_loop_closure.time_b_ns));
   Expression<SE3> exp_T_w_a(laser_tracks_[loop_closure.track_id_a]->getValueExpression(
@@ -113,12 +127,19 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
                                    exp_relative);
   new_factors.push_back(new_factor);
 
+  ExpressionFactor<SE3> new_association_factor(first_association_noise_model_,
+                                               updated_loop_closure.T_a_b, exp_relative);
+
+  new_associations_factors.push_back(new_association_factor);
+
   LOG(INFO) << "Estimating the trajectories.";
   std::vector<unsigned int> affected_worker_ids;
   affected_worker_ids.push_back(loop_closure.track_id_a);
   affected_worker_ids.push_back(loop_closure.track_id_b);
   Values new_values;
-  Values result = estimateAndRemove(new_factors, new_values, affected_worker_ids);
+  Values result = estimateAndRemove(new_factors, new_associations_factors,
+                                    new_values, affected_worker_ids,
+                                    updated_loop_closure.time_b_ns);
 
   LOG(INFO) << "Updating the trajectories after LC.";
   for (auto& track: laser_tracks_) {
@@ -128,7 +149,8 @@ void IncrementalEstimator::processLoopClosure(const RelativePose& loop_closure) 
 }
 
 Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_factors,
-                                      const gtsam::Values& new_values) {
+                                      const gtsam::Values& new_values,
+                                      laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   Clock clock;
   // Update and force relinearization.
@@ -141,29 +163,53 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
 Values IncrementalEstimator::estimateAndRemove(
     const gtsam::NonlinearFactorGraph& new_factors,
+    const gtsam::NonlinearFactorGraph& new_associations_factors,
     const gtsam::Values& new_values,
-    const std::vector<unsigned int>& affected_worker_ids) {
+    const std::vector<unsigned int>& affected_worker_ids,
+    laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  
+
   Clock clock;
   CHECK_EQ(affected_worker_ids.size(), 2u);
-
+  gtsam::NonlinearFactorGraph new_factors_to_add = new_factors;
   // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
   if (affected_worker_ids.at(0u) != affected_worker_ids.at(1u)) {
     // Remove the prior of the worker with the largest ID if not already removed.
-    unsigned int worker_id_to_remove = std::max(affected_worker_ids.at(0u),
-                                                affected_worker_ids.at(1u));
+    const unsigned int max_id = std::max(affected_worker_ids.at(0u),
+                                         affected_worker_ids.at(1u));
+
+    const unsigned int min_id = std::min(affected_worker_ids.at(0u),
+                                         affected_worker_ids.at(1u));
+
+    unsigned int worker_id_to_remove = max_id;
+
+    if (min_id != 0u) {
+      if_first_then_remove_second_.emplace(worker_id_to_remove,
+                                           min_id);
+    }
+
     if (std::find(worker_ids_with_removed_prior_.begin(),
                   worker_ids_with_removed_prior_.end(), worker_id_to_remove) !=
                       worker_ids_with_removed_prior_.end()) {
       worker_id_to_remove = std::min(affected_worker_ids.at(0u),
                                      affected_worker_ids.at(1u));
+
+    }
+
+    if (factor_indices_to_remove_.count(worker_id_to_remove) != 1u) {
+      if (min_id == 0u) {
+        if (if_first_then_remove_second_.find(max_id) !=
+            if_first_then_remove_second_.end()) {
+          worker_id_to_remove = if_first_then_remove_second_.at(max_id);
+        }
+      }
     }
 
     CHECK_LT(factor_indices_to_remove_.count(worker_id_to_remove), 2u);
@@ -171,29 +217,30 @@ Values IncrementalEstimator::estimateAndRemove(
       factor_indices_to_remove.push_back(factor_indices_to_remove_.at(worker_id_to_remove));
       factor_indices_to_remove_.erase(worker_id_to_remove);
       worker_ids_with_removed_prior_.push_back(worker_id_to_remove);
+
+      // If we remove a prior use proper noise model.
+      new_factors_to_add = new_associations_factors;
     }
   }
 
-  //isam2_.saveGraph("/tmp/graph_before");
+  isam2_.update(new_factors_to_add, new_values, factor_indices_to_remove).print();
 
-  isam2_.update(new_factors, new_values, factor_indices_to_remove).print();
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
 
-  //isam2_.saveGraph("/tmp/graph_after");
-
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
+  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
 gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGraph& new_factors,
                                                   const gtsam::Values& new_values,
                                                   const unsigned int worker_id) {
-
+  std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   ISAM2Result update_result = isam2_.update(new_factors, new_values);
 
   CHECK_EQ(update_result.newFactorsIndices.size(), 1u);

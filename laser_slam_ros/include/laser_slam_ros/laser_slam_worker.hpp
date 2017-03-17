@@ -51,6 +51,15 @@ class LaserSlamWorker {
 
   void getOdometryTrajectory(laser_slam::Trajectory* out_trajectory) const;
 
+  void updateLocalMap(const laser_slam::SE3& last_pose_before_update,
+                      const laser_slam::Time last_pose_before_update_timestamp_ns);
+
+  void setLockScanCallback(bool new_state);
+
+  void displayTimings() const;
+
+  void saveTimings() const;
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);
@@ -82,7 +91,12 @@ class LaserSlamWorker {
   std::shared_ptr<laser_slam::LaserTrack> laser_track_;
 
   // TODO use standard mutex?
-  mutable std::recursive_mutex full_class_mutex_;
+  mutable std::recursive_mutex world_to_odom_mutex_;
+  mutable std::recursive_mutex local_map_filtered_mutex_;
+  mutable std::recursive_mutex local_map_mutex_;
+
+  mutable std::recursive_mutex scan_callback_mutex_;
+  bool lock_scan_callback_ = false;
 
   // Subscribers.
   ros::Subscriber scan_sub_;
@@ -122,10 +136,9 @@ class LaserSlamWorker {
   laser_slam::SE3 last_pose_;
   bool last_pose_set_ = false;
 
-  pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
+  laser_slam::Pose last_pose_sent_to_laser_track_;
 
-  // Indicates whether a new source cloud is ready for localization or loop-closure.
-  bool source_cloud_ready_ = false;
+  pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
 
   tf::StampedTransform world_to_odom_;
 

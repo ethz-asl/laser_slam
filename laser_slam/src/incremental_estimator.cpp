@@ -210,7 +210,6 @@ Values IncrementalEstimator::estimateAndRemove(
 
   clock.takeTime();
   LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
-  //estimation_and_remove_times_.emplace(timestamp_ns, clock.getRealTime());
   estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }

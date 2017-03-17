@@ -57,11 +57,6 @@ class IncrementalEstimator {
     *estimation_times = estimation_times_;
   }
 
-  /*void getEstimationAndRemoveTimes(std::vector<double>* estimation_times) const {
-    CHECK_NOTNULL(estimation_times);
-    *estimation_times = estimation_and_remove_times_;
-  }*/
-
  private:
   unsigned int n_laser_slam_workers_;
 
@@ -87,7 +82,6 @@ class IncrementalEstimator {
   std::vector<unsigned int> worker_ids_with_removed_prior_;
 
   std::map<laser_slam::Time, double> estimation_times_;
-  //std::vector<double> estimation_and_remove_times_;
 
 
   // Parameters.

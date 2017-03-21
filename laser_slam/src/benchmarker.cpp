@@ -1,4 +1,6 @@
 
+#include "laser_slam/benchmarker.hpp"
+
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -11,14 +13,12 @@
 
 #include <glog/logging.h>
 
-#include "laser_slam/benchmarker.hpp"
-
 namespace laser_slam {
 
 void Benchmarker::addMeasurement(
     const std::string& name,
-    const std::chrono::time_point<clock>& start,
-    const std::chrono::time_point<clock>& end) {
+    const std::chrono::time_point<Clock>& start,
+    const std::chrono::time_point<Clock>& end) {
 
   constexpr double mus_to_ms = 1.0 / 1000.0;
   auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -34,7 +34,7 @@ void Benchmarker::addMeasurement(
 void Benchmarker::saveStatistics(const std::string& file_name) {
 
   std::ofstream out_file;
-  out_file.open (file_name);
+  out_file.open(file_name);
 
   if (out_file.is_open()) {
 
@@ -42,11 +42,11 @@ void Benchmarker::saveStatistics(const std::string& file_name) {
     out_file << " " << std::endl
         << ALIGN_MODIFIERS << "Name: " << "Mean (SD)" << std::endl;
 
-    for (auto& codeBlock : statistics_) {
+    for (const auto& code_block : statistics_) {
       out_file << " "
-          << ALIGN_MODIFIERS << (codeBlock.first + ": ")
-          << FLOAT_MODIFIERS << codeBlock.second.getMean() << "ms ("
-          << FLOAT_MODIFIERS << codeBlock.second.getStandardDeviation()
+          << ALIGN_MODIFIERS << (code_block.first + ": ")
+          << FLOAT_MODIFIERS << code_block.second.getMean() << "ms ("
+          << FLOAT_MODIFIERS << code_block.second.getStandardDeviation()
           << "ms)"  << std::endl;
     }
 
@@ -65,11 +65,11 @@ void Benchmarker::logStatistics() {
   LOG(INFO) << " "
       << ALIGN_MODIFIERS << "Name: " << "Mean (SD)";
 
-  for (auto& codeBlock : statistics_) {
+  for (const auto& code_block : statistics_) {
     LOG(INFO) << " "
-        << ALIGN_MODIFIERS << (codeBlock.first + ": ")
-        << FLOAT_MODIFIERS << codeBlock.second.getMean() << "ms ("
-        << FLOAT_MODIFIERS << codeBlock.second.getStandardDeviation() << "ms)";
+        << ALIGN_MODIFIERS << (code_block.first + ": ")
+        << FLOAT_MODIFIERS << code_block.second.getMean() << "ms ("
+        << FLOAT_MODIFIERS << code_block.second.getStandardDeviation() << "ms)";
   }
 
   LOG(INFO) << "";
@@ -96,12 +96,12 @@ double Benchmarker::MeasurementStatistics_::getStandardDeviation() const {
       pow(sum_ / static_cast<double>(measurements_count_), 2.0));
 }
 
-ScopedTimer::ScopedTimer(const std::string name)
+ScopedTimer::ScopedTimer(const std::string& name)
   : name_(name)
-  , start_(Benchmarker::clock::now()) { }
+  , start_(Benchmarker::Clock::now()) { }
 
 ScopedTimer::~ScopedTimer() {
-  Benchmarker::addMeasurement(name_, start_, Benchmarker::clock::now());
+  Benchmarker::addMeasurement(name_, start_, Benchmarker::Clock::now());
 }
 
 }

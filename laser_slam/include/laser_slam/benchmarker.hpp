@@ -18,14 +18,14 @@ namespace laser_slam {
   laser_slam::ScopedTimer unique_name(#unique_name);
 /// \brief Start a timer called unique_name.
 #define BENCHMARK_START(unique_name) \
-  auto __start ## unique_name = laser_slam::Benchmarker::clock::now();
+  auto __start ## unique_name = laser_slam::Benchmarker::Clock::now();
 /// \brief Stop the timer called unique_name and commit the results
 /// to the benchmarker.
 #define BENCHMARK_STOP(unique_name) \
   laser_slam::Benchmarker::addMeasurement( \
       #unique_name, \
       __start ## unique_name, \
-      laser_slam::Benchmarker::clock::now());
+      laser_slam::Benchmarker::Clock::now());
 #else
 #define BENCHMARK_BLOCK(unique_name)
 #define BENCHMARK_START(unique_name)
@@ -39,18 +39,18 @@ class Benchmarker {
 
  public:
   /// \brief The clock used for timing operations
-  typedef std::chrono::high_resolution_clock clock;
+  typedef std::chrono::high_resolution_clock Clock;
 
   /// \brief Add a time measurement for a region of code with a specific name.
   static void addMeasurement(
       const std::string& name,
-      const std::chrono::time_point<clock>& start,
-      const std::chrono::time_point<clock>& end);
+      const std::chrono::time_point<Clock>& start,
+      const std::chrono::time_point<Clock>& end);
 
-  /// \brief Print the statistics to the specified file
+  /// \brief Print the statistics to the specified file.
   static void saveStatistics(const std::string& file_name);
 
-  /// \brief Print the statistics to the logger
+  /// \brief Print the statistics to the logger.
   static void logStatistics();
 
  private:
@@ -95,19 +95,17 @@ class Benchmarker {
 class ScopedTimer {
 
  public:
-  /// \brief The clock used for timing operations
-  typedef std::chrono::high_resolution_clock clock;
 
   /// \brief Default constructor. Starts the timer.
-  ScopedTimer(const std::string name);
+  ScopedTimer(const std::string& name);
 
-  /// \brief Destructor. Stops the timer and commit the result to the
+  /// \brief Destructor. Stops the timer and commits the result to the
   /// benchmarker.
   ~ScopedTimer();
 
  private:
   /// \brief The time point when the timer was started.
-  std::chrono::time_point<clock> start_;
+  std::chrono::time_point<Benchmarker::Clock> start_;
 
   /// \brief Name of the timed block.
   std::string name_;

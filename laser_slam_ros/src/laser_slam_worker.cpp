@@ -1,5 +1,6 @@
-#include "laser_slam/benchmarker.hpp"
 #include "laser_slam_ros/laser_slam_worker.hpp"
+
+#include "laser_slam/benchmarker.hpp"
 
 //TODO clean
 #include <Eigen/Eigenvalues>

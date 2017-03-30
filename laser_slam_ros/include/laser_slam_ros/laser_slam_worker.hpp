@@ -43,7 +43,7 @@ class LaserSlamWorker {
   // Get a filtered map and apply map separation if desired.
   void getFilteredMap(laser_slam_ros::PointCloud* filtered_map);
 
-  // Get a vector containing the point clouds that have been recorded since
+  // Get a vector containing the optimized point clouds recorded since
   // the last call to this method. This call clears the point cloud queue.
   std::vector<laser_slam_ros::PointCloud> getQueuedPoints();
 

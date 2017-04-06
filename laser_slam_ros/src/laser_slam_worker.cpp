@@ -1,5 +1,7 @@
 #include "laser_slam_ros/laser_slam_worker.hpp"
 
+#include "laser_slam/benchmarker.hpp"
+
 //TODO clean
 #include <Eigen/Eigenvalues>
 #include <geometry_msgs/Pose.h>
@@ -236,6 +238,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
             } else {
               local_map_ = new_fixed_cloud_pcl;
             }
+            local_map_queue_.push_back(new_fixed_cloud_pcl);
           }
         }
       }
@@ -370,8 +373,16 @@ Time LaserSlamWorker::curveTimeToRosTime(const Time& timestamp_ns) const {
   return timestamp_ns + base_time_ns_;
 }
 
+std::vector<laser_slam_ros::PointCloud> LaserSlamWorker::getQueuedPoints() {
+  std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
+  std::vector<laser_slam_ros::PointCloud> new_points;
+  new_points.swap(local_map_queue_);
+  return new_points;
+}
+
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
+  BENCHMARK_BLOCK(LS_getFilteredMap);
   laser_slam::Pose current_pose = laser_track_->getCurrentPose();
 
   PclPoint current_position;
@@ -384,6 +395,7 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   {
     std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
     local_map = local_map_;
+    BENCHMARK_BLOCK(LS_cylindricalFilter);
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, false, &local_map_);
   }

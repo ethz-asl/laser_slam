@@ -60,6 +60,8 @@ class LaserSlamWorker {
 
   void saveTimings() const;
 
+  void exportTrajectoryHead(laser_slam::Time head_duration_ns, const std::string& filename) const;
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);

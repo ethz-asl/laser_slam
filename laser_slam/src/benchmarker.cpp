@@ -1,19 +1,16 @@
-
 #include "laser_slam/benchmarker.hpp"
 
-#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <mutex>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 #include <glog/logging.h>
 
 namespace laser_slam {
+
+#define ALIGN_MODIFIERS std::setw(40) << std::setfill(' ') << std::left
+#define FLOAT_MODIFIERS std::fixed << std::setprecision(2)
 
 void Benchmarker::addMeasurement(
     const std::string& name,
@@ -24,12 +21,13 @@ void Benchmarker::addMeasurement(
   auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
   double milliseconds = static_cast<double>(microseconds) * mus_to_ms;
 
+  #ifdef BENCHMARK_ENABLE_LIVE_OUTPUT
+  LOG(INFO) << name << " took " << FLOAT_MODIFIERS << milliseconds << "ms.";
+  #endif
+
   std::lock_guard<std::mutex> lock(mutex_);
   statistics_[name].addMeasurement(milliseconds);
 }
-
-#define ALIGN_MODIFIERS std::setw(40) << std::setfill(' ') << std::left
-#define FLOAT_MODIFIERS std::fixed << std::setprecision(2)
 
 void Benchmarker::saveStatistics(const std::string& file_name) {
 
@@ -78,7 +76,7 @@ void Benchmarker::logStatistics() {
 Benchmarker::Benchmarker() { }
 
 std::mutex Benchmarker::mutex_;
-std::unordered_map<std::string, Benchmarker::MeasurementStatistics_> Benchmarker::statistics_;
+std::map<std::string, Benchmarker::MeasurementStatistics_> Benchmarker::statistics_;
 
 void Benchmarker::MeasurementStatistics_::addMeasurement(const double& value) {
   sum_ += value;

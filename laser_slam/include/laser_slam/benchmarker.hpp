@@ -4,15 +4,16 @@
 #include <chrono>
 #include <mutex>
 #include <string>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 namespace laser_slam {
 
 /// TODO(Mattia): Move this to the preprocessor definitions:
-#define ENABLE_BENCHMARKING
+#define BENCHMARK_ENABLE
+#define BENCHMARK_ENABLE_LIVE_OUTPUT
 
-#ifdef ENABLE_BENCHMARKING
+#ifdef BENCHMARK_ENABLE
 /// \brief Measure the time elapsed from this line to the end of the scope.
 #define BENCHMARK_BLOCK(unique_name) \
   laser_slam::ScopedTimer unique_name(#unique_name);
@@ -85,7 +86,8 @@ class Benchmarker {
   static std::mutex mutex_;
 
   /// \brief Map containing all the measurements for each named region of code.
-  static std::unordered_map<std::string, MeasurementStatistics_> statistics_;
+  /// Measurements are sorted in alphabetical order.
+  static std::map<std::string, MeasurementStatistics_> statistics_;
 };
 
 /// \brief A timer that measures the time elapsed between its creation

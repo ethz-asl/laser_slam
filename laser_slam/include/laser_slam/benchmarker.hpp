@@ -9,9 +9,10 @@
 
 namespace laser_slam {
 
-/// TODO(Mattia): Move this to the preprocessor definitions:
-#define BENCHMARK_ENABLE
-#define BENCHMARK_ENABLE_LIVE_OUTPUT
+// In order to use the benchmarker define the following macro in your project.
+// #define BENCHMARK_ENABLE
+// Enable live output of the measured timings (optional).
+// #define BENCHMARK_ENABLE_LIVE_OUTPUT
 
 #ifdef BENCHMARK_ENABLE
 /// \brief Measure the time elapsed from this line to the end of the scope.
@@ -27,10 +28,17 @@ namespace laser_slam {
       #unique_name, \
       __start ## unique_name, \
       laser_slam::Benchmarker::Clock::now());
+#define BENCHMARK_RESET(unique_name) \
+  laser_slam::Benchmarker::resetStatistics( #unique_name );
+/// \brief Reset all statistics.
+#define BENCHMARK_RESET_ALL() \
+  laser_slam::Benchmarker::resetStatistics("");
 #else
 #define BENCHMARK_BLOCK(unique_name)
 #define BENCHMARK_START(unique_name)
 #define BENCHMARK_STOP(unique_name)
+#define BENCHMARK_RESET(unique_name)
+#define BENCHMARK_RESET_ALL()
 #endif
 
 /// \brief Benchmark helper class. Allows collecting execution times
@@ -47,6 +55,10 @@ class Benchmarker {
       const std::string& name,
       const std::chrono::time_point<Clock>& start,
       const std::chrono::time_point<Clock>& end);
+
+  /// \brief Reset the statistics for the specified name. If \e name is an
+  /// empty string, all statistics will be reset.
+  static void resetStatistics(const std::string& name);
 
   /// \brief Print the statistics to the specified file.
   static void saveStatistics(const std::string& file_name);

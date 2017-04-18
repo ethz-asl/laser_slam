@@ -8,6 +8,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/point_types.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_srvs/Empty.h>
 #include <tf/transform_listener.h>
 
 #include "laser_slam_ros/GetLaserTrackSrv.h"
@@ -66,6 +67,8 @@ class LaserSlamWorker {
 
   void exportTrajectoryHead(laser_slam::Time head_duration_ns, const std::string& filename) const;
 
+  bool exportTrajectoryServiceCall(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);
@@ -117,6 +120,7 @@ class LaserSlamWorker {
 
   // Services.
   ros::ServiceServer get_laser_track_srv_;
+  ros::ServiceServer export_trajectory_srv_;
 
   tf::TransformListener tf_listener_;
 

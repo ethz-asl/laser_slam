@@ -63,6 +63,9 @@ void LaserSlamWorker::init(
   get_laser_track_srv_ = nh.advertiseService(
       params_.get_laser_track_srv_topic,
       &LaserSlamWorker::getLaserTracksServiceCall, this);
+  export_trajectory_srv_ = nh.advertiseService(
+      "export_trajectory",
+      &LaserSlamWorker::exportTrajectoryServiceCall, this);
 
   voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
                             params_.voxel_size_m);
@@ -592,6 +595,13 @@ void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
   matrix.conservativeResize(i, 4);
   writeEigenMatrixXdCSV(matrix, filename);
   LOG(INFO) << "Exported " << i << " trajectory poses to " << filename << ".";
+}
+
+bool LaserSlamWorker::exportTrajectoryServiceCall(std_srvs::Empty::Request& req,
+                                                  std_srvs::Empty::Response& res) {
+  exportTrajectoryHead(laser_track_->getMaxTime(),
+                       "/tmp/online_matcher/trajectory.csv");
+  return true;
 }
 
 } // namespace laser_slam_ros

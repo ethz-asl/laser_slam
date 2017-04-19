@@ -28,6 +28,7 @@ namespace laser_slam {
       #unique_name, \
       __start ## unique_name, \
       laser_slam::Benchmarker::Clock::now());
+/// \brief Reset the statistics for a specific name.
 #define BENCHMARK_RESET(unique_name) \
   laser_slam::Benchmarker::resetStatistics( #unique_name );
 /// \brief Reset all statistics.

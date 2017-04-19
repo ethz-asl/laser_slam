@@ -554,7 +554,7 @@ void LaserSlamWorker::saveTimings() const {
   laser_track_->getTrajectory(&traj);
   matrix.resize(traj.size(), 4);
   unsigned int i = 0u;
-  for (const auto& pose: traj) {
+  for (const auto& pose : traj) {
     matrix(i,0) = pose.first;
     matrix(i,1) = pose.second.getPosition()(0);
     matrix(i,2) = pose.second.getPosition()(1);
@@ -583,7 +583,7 @@ void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
   }
 
   unsigned int i = 0u;
-  for (const auto& pose: traj) {
+  for (const auto& pose : traj) {
     if (pose.first > head_start_ns) {
       matrix(i,0) = pose.first;
       matrix(i,1) = pose.second.getPosition()(0);

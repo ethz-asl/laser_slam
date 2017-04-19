@@ -29,6 +29,14 @@ void Benchmarker::addMeasurement(
   statistics_[name].addMeasurement(milliseconds);
 }
 
+void Benchmarker::resetStatistics(const std::string& name) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (name.empty())
+    statistics_.clear();
+  else
+    statistics_[name] = MeasurementStatistics_();
+}
+
 void Benchmarker::saveStatistics(const std::string& file_name) {
 
   std::ofstream out_file;

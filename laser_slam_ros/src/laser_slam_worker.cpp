@@ -7,6 +7,7 @@
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <laser_slam/benchmarker.hpp>
 #include <laser_slam/common.hpp>
 #include <laser_slam_ros/common.hpp>
 #include <laser_slam_ros/laser_slam_worker.hpp>
@@ -62,6 +63,9 @@ void LaserSlamWorker::init(
   get_laser_track_srv_ = nh.advertiseService(
       params_.get_laser_track_srv_topic,
       &LaserSlamWorker::getLaserTracksServiceCall, this);
+  export_trajectory_srv_ = nh.advertiseService(
+      "export_trajectory",
+      &LaserSlamWorker::exportTrajectoryServiceCall, this);
 
   voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
                             params_.voxel_size_m);
@@ -550,7 +554,7 @@ void LaserSlamWorker::saveTimings() const {
   laser_track_->getTrajectory(&traj);
   matrix.resize(traj.size(), 4);
   unsigned int i = 0u;
-  for (const auto& pose: traj) {
+  for (const auto& pose : traj) {
     matrix(i,0) = pose.first;
     matrix(i,1) = pose.second.getPosition()(0);
     matrix(i,2) = pose.second.getPosition()(1);
@@ -558,24 +562,46 @@ void LaserSlamWorker::saveTimings() const {
     ++i;
   }
   writeEigenMatrixXdCSV(matrix, "/tmp/trajectory_" + std::to_string(worker_id_) + ".csv");
-
-
-  /*double mean, sigma;
-  getMeanAndSigma(scan_matching_times, &mean, &sigma);
-  LOG(INFO) << "Scan matching times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  std::vector<double> estimation_times;
-  incremental_estimator_->getEstimationTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  incremental_estimator_->getEstimationAndRemoveTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation and remove times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;*/
 }
 
+void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
+                                           const std::string& filename) const {
+  BENCHMARK_BLOCK(LS_exportTrajectoryHead);
+
+  Eigen::MatrixXd matrix;
+  Trajectory traj;
+  laser_track_->getTrajectory(&traj);
+  CHECK_GE(traj.size(), 1u);
+  matrix.resize(traj.size(), 4);
+
+  const Time traj_end_ns = traj.rbegin()->first;
+  Time head_start_ns;
+  if (traj_end_ns > head_duration_ns) {
+    head_start_ns = traj_end_ns - head_duration_ns;
+  } else {
+    head_start_ns = 0u;
+  }
+
+  unsigned int i = 0u;
+  for (const auto& pose : traj) {
+    if (pose.first > head_start_ns) {
+      matrix(i,0) = pose.first;
+      matrix(i,1) = pose.second.getPosition()(0);
+      matrix(i,2) = pose.second.getPosition()(1);
+      matrix(i,3) = pose.second.getPosition()(2);
+      ++i;
+    }
+  }
+  matrix.conservativeResize(i, 4);
+  writeEigenMatrixXdCSV(matrix, filename);
+  LOG(INFO) << "Exported " << i << " trajectory poses to " << filename << ".";
+}
+
+bool LaserSlamWorker::exportTrajectoryServiceCall(std_srvs::Empty::Request& req,
+                                                  std_srvs::Empty::Response& res) {
+  exportTrajectoryHead(laser_track_->getMaxTime(),
+                       "/tmp/online_matcher/trajectory.csv");
+  return true;
+}
 
 } // namespace laser_slam_ros

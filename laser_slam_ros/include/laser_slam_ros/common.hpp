@@ -2,6 +2,7 @@
 #define LASER_SLAM_ROS_COMMON_HPP_
 
 #include <laser_slam/parameters.hpp>
+#include <laser_slam/benchmarker.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -139,6 +140,18 @@ static laser_slam::EstimatorParams getOnlineEstimatorParams(const ros::NodeHandl
   nh.getParam(ns + "/loop_closures_sub_maps_radius", params.loop_closures_sub_maps_radius);
 
   params.laser_track_params = getLaserTrackParams(nh, ns);
+
+  return params;
+}
+
+static laser_slam::BenchmarkerParams getBenchmarkerParams(const ros::NodeHandle& nh,
+                                                          const std::string& prefix) {
+  laser_slam::BenchmarkerParams params;
+  const std::string ns = prefix + "/Benchmarker";
+
+  nh.getParam(ns + "/save_statistics_only", params.save_statistics_only);
+  nh.getParam(ns + "/enable_live_output", params.enable_live_output);
+  nh.getParam(ns + "/results_directory", params.results_directory);
 
   return params;
 }

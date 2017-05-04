@@ -5,109 +5,208 @@
 #include <iomanip>
 #include <iostream>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/filesystem.hpp>
 #include <glog/logging.h>
+
+namespace fs = boost::filesystem;
 
 namespace laser_slam {
 
-#define ALIGN_MODIFIERS std::setw(40) << std::setfill(' ') << std::left
+//=================================================================================================
+//    Benchmarker implementation
+//=================================================================================================
+
+#define ALIGN_MODIFIERS std::setw(50) << std::setfill(' ') << std::left
 #define FLOAT_MODIFIERS std::fixed << std::setprecision(2)
 
-void Benchmarker::addMeasurement(
-    const std::string& name,
-    const std::chrono::time_point<Clock>& start,
-    const std::chrono::time_point<Clock>& end) {
-
-  constexpr double mus_to_ms = 1.0 / 1000.0;
-  auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-  double milliseconds = static_cast<double>(microseconds) * mus_to_ms;
-
-  #ifdef BENCHMARK_ENABLE_LIVE_OUTPUT
-  LOG(INFO) << name << " took " << FLOAT_MODIFIERS << milliseconds << "ms.";
-  #endif
-
-  std::lock_guard<std::mutex> lock(mutex_);
-  statistics_[name].addMeasurement(milliseconds);
+void Benchmarker::startMeasurement(const std::string& topic_name) {
+  CHECK_NE(topic_name, "");
+  std::lock_guard<std::mutex> lock(started_measurements_mutex_);
+  auto result = started_mesurements_.emplace(topic_name, TimePoint());
+  if (result.second == false) {
+    LOG(WARNING) << "Starting a measurement for topic '" << topic_name << "' twice.";
+  }
+  result.first->second = Clock::now();
 }
 
-void Benchmarker::resetStatistics(const std::string& name) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (name.empty())
-    statistics_.clear();
-  else
-    statistics_[name] = MeasurementStatistics_();
+void Benchmarker::stopMeasurement(const std::string& topic_name) {
+  CHECK_NE(topic_name, "");
+  const TimePoint end = Clock::now();
+  std::lock_guard<std::mutex> lock(started_measurements_mutex_);
+  const auto start_it = started_mesurements_.find(topic_name);
+  if (start_it != started_mesurements_.end()) {
+    addMeasurement(topic_name, start_it->second, end);
+    started_mesurements_.erase(start_it);
+  } else {
+    LOG(WARNING) << "Trying to finish a measurement for topic '" << topic_name << "' which has "
+        "not been started.";
+  }
 }
 
-void Benchmarker::saveStatistics(const std::string& file_name) {
+void Benchmarker::addMeasurement(const std::string& topic_name, const TimePoint& start,
+                                 const TimePoint& end) {
+  CHECK_NE(topic_name, "");
+  double milliseconds = durationToMilliseconds(end - start);
 
-  std::ofstream out_file;
-  out_file.open(file_name);
+  if (params_.enable_live_output) {
+    LOG(INFO) << topic_name << " took " << FLOAT_MODIFIERS << milliseconds << "ms.";
+  }
+
+  std::lock_guard<std::mutex> lock(value_topics_mutex_);
+  value_topics_[topic_name].addValue(start, milliseconds);
+}
+
+void Benchmarker::addValue(const std::string& topic_name, const double value) {
+  CHECK_NE(topic_name, "");
+  std::lock_guard<std::mutex> lock(value_topics_mutex_);
+  value_topics_[topic_name].addValue(Clock::now(), value);
+}
+
+void Benchmarker::resetTopic(const std::string& topic_prefix) {
+  std::lock_guard<std::mutex> lock(value_topics_mutex_);
+  for (auto& topic : value_topics_) {
+    if (topic.first.find(topic_prefix) == 0) {
+      topic.second = ValueTopic();
+    }
+  }
+}
+
+void Benchmarker::saveData() {
+  std::lock_guard<std::mutex> lock(value_topics_mutex_);
+  fs::path root(setupAndGetResultsRootDirectory());
+
+  // Write statistics
+  fs::path statistics_file_path = root / fs::path("statistics.txt");
+  std::ofstream out_file(statistics_file_path.string());
 
   if (out_file.is_open()) {
-
-    out_file << "Benchmark results:" << std::endl;
-    out_file << " " << std::endl
-        << ALIGN_MODIFIERS << "Name: " << "Mean (SD)" << std::endl;
-
-    for (const auto& code_block : statistics_) {
-      out_file << " "
-          << ALIGN_MODIFIERS << (code_block.first + ": ")
-          << FLOAT_MODIFIERS << code_block.second.getMean() << "ms ("
-          << FLOAT_MODIFIERS << code_block.second.getStandardDeviation()
-          << "ms)"  << std::endl;
+    out_file << std::endl << ALIGN_MODIFIERS << "Name: " << "Mean (SD)" << std::endl;
+    for (const auto& topic : value_topics_) {
+      out_file << ALIGN_MODIFIERS << (topic.first + ": ")
+               << FLOAT_MODIFIERS << topic.second.getMean() << " ("
+               << FLOAT_MODIFIERS << topic.second.getStandardDeviation() << ")"  << std::endl;
     }
-
     out_file.close();
-    LOG(INFO) << "Benchmark results saved to " << file_name;
+  } else {
+    LOG(INFO) << "Failed to save statistics results to " << statistics_file_path.string();
   }
-  else {
-    LOG(INFO) << "Failed to save benchmark results.";
+
+  // Write data for each topic
+  if (!params_.save_statistics_only) {
+    TimePoint first_timepoint = getFirstValueTimepoint();
+    for (const auto& topic : value_topics_) {
+      // Build file name for the topic.
+      std::vector<std::string> tokens;
+      boost::split(tokens, topic.first, boost::is_any_of(".:-/\\, "));
+      tokens.pop_back();
+      fs::path subdir;
+      for (const auto& token : tokens) subdir = subdir / token;
+
+      // Create directory and open file.
+      fs::create_directories(root / subdir);
+      fs::path topic_file_path = root / subdir / fs::path(tokens.back() + ".txt");
+      std::ofstream out_file(topic_file_path.string());
+
+      // Write data. Write times in milliseconds relative to the start of the measurements.
+      if (out_file.is_open()) {
+        for (const auto& value : topic.second.getValues()) {
+          out_file << durationToMilliseconds(value.first - first_timepoint) << " "
+                   << value.second << std::endl;
+        }
+        out_file.close();
+      } else {
+        LOG(INFO) << "Failed to save results to " << topic_file_path.string();
+      }
+    }
   }
+
+  LOG(INFO) << "Benchmark results saved to " << root.string();
 }
 
 void Benchmarker::logStatistics() {
-
+  std::lock_guard<std::mutex> lock(value_topics_mutex_);
   LOG(INFO) << "";
-  LOG(INFO) << "Benchmark results:";
-  LOG(INFO) << " "
-      << ALIGN_MODIFIERS << "Name: " << "Mean (SD)";
+  LOG(INFO) << "Statistics:";
+  LOG(INFO) << " " << ALIGN_MODIFIERS << "Topic: " << "Mean (SD)";
 
-  for (const auto& code_block : statistics_) {
-    LOG(INFO) << " "
-        << ALIGN_MODIFIERS << (code_block.first + ": ")
-        << FLOAT_MODIFIERS << code_block.second.getMean() << "ms ("
-        << FLOAT_MODIFIERS << code_block.second.getStandardDeviation() << "ms)";
+  for (const auto& topic : value_topics_) {
+    LOG(INFO) << " " << ALIGN_MODIFIERS << (topic.first + ": ")
+                     << FLOAT_MODIFIERS << topic.second.getMean() << " ("
+                     << FLOAT_MODIFIERS << topic.second.getStandardDeviation() << ")";
   }
-
   LOG(INFO) << "";
 }
 
-Benchmarker::Benchmarker() { }
+std::string Benchmarker::setupAndGetResultsRootDirectory() {
+  // Get the current time and use it for creating the directory name
+  std::time_t now = Clock::to_time_t(Clock::now());
+  char time_buffer[100];
+  std::strftime(time_buffer, sizeof(time_buffer), "%F_%H-%M-%S", std::localtime(&now));
 
-std::mutex Benchmarker::mutex_;
-std::map<std::string, Benchmarker::MeasurementStatistics_> Benchmarker::statistics_;
+  // Create directory
+  fs::path root = fs::path(params_.results_directory) / fs::path(std::string(time_buffer));
+  fs::create_directories(root);
 
-void Benchmarker::MeasurementStatistics_::addMeasurement(const double& value) {
+  return root.string();
+}
+
+Benchmarker::TimePoint Benchmarker::getFirstValueTimepoint() {
+  TimePoint first_timepoint = TimePoint::max();
+  for (const auto& topic : value_topics_) {
+    if (!topic.second.getValues().empty()) {
+      first_timepoint = std::min(first_timepoint, topic.second.getValues().front().first);
+    }
+  }
+  return first_timepoint;
+}
+
+double Benchmarker::durationToMilliseconds(const Duration& duration) {
+  constexpr double mus_to_ms = 1.0 / 1000.0;
+  auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+  return static_cast<double>(microseconds) * mus_to_ms;
+}
+
+//=================================================================================================
+//    TimerTopic implementation
+//=================================================================================================
+
+void Benchmarker::ValueTopic::addValue(const TimePoint& timestamp, const double value) {
   sum_ += value;
   sum_of_squares_ += value * value;
-  measurements_count_++;
+  values_count_++;
+
+  if (!Benchmarker::getParameters().save_statistics_only) {
+    values_.emplace_back(timestamp, value);
+  }
 }
 
-double Benchmarker::MeasurementStatistics_::getMean() const {
-  return sum_ / static_cast<double>(measurements_count_);
+double Benchmarker::ValueTopic::getMean() const {
+  return sum_ / static_cast<double>(values_count_);
 }
 
-double Benchmarker::MeasurementStatistics_::getStandardDeviation() const {
-  return sqrt(
-      sum_of_squares_ / static_cast<double>(measurements_count_) -
-      pow(sum_ / static_cast<double>(measurements_count_), 2.0));
+double Benchmarker::ValueTopic::getStandardDeviation() const {
+  return sqrt(sum_of_squares_ / static_cast<double>(values_count_) -
+              pow(sum_ / static_cast<double>(values_count_), 2.0));
 }
 
-ScopedTimer::ScopedTimer(const std::string& name)
-  : name_(name)
-  , start_(Benchmarker::Clock::now()) { }
+//=================================================================================================
+//    Benchmarker fields
+//=================================================================================================
+
+std::mutex Benchmarker::value_topics_mutex_;
+std::mutex Benchmarker::started_measurements_mutex_;
+std::map<std::string, Benchmarker::ValueTopic> Benchmarker::value_topics_;
+std::unordered_map<std::string, Benchmarker::TimePoint> Benchmarker::started_mesurements_;
+BenchmarkerParams Benchmarker::params_;
+
+//=================================================================================================
+//    ScopedTimer implementation
+//=================================================================================================
 
 ScopedTimer::~ScopedTimer() {
-  Benchmarker::addMeasurement(name_, start_, Benchmarker::Clock::now());
+  Benchmarker::addMeasurement(topic_name_, start_, Benchmarker::Clock::now());
 }
 
-}
+} // namespace laser_slam
+

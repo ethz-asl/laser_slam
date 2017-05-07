@@ -10,17 +10,22 @@
 
 namespace laser_slam {
 
-// In order to use the benchmarker define the following macro in your project.
-// #define BENCHMARK_ENABLE
+// In order to use the benchmarker define the BENCHMARK_ENABLE macro in your project.
 
 #ifdef BENCHMARK_ENABLE
+/// \brief Notifies the benchmarker that a new step started. All measurements and values added
+/// after this call will have the same timestamp.
+#define BENCHMARK_START_NEW_STEP() laser_slam::Benchmarker::notifyNewStepStart();
 /// \brief Measure the time elapsed from this line to the end of the scope and record it to the
 /// \c topic_name topic.
 #define BENCHMARK_BLOCK(topic_name) laser_slam::ScopedTimer __timer_ ## __LINE__(topic_name);
 /// \brief Starts a measurement for the \c topic_name topic.
 #define BENCHMARK_START(topic_name) laser_slam::Benchmarker::startMeasurement(topic_name);
-/// \brief Stops a measurement for the \c topic_name topic.
+/// \brief Stops a measurement for the \c topic_name topic and store the result.
 #define BENCHMARK_STOP(topic_name) laser_slam::Benchmarker::stopMeasurement(topic_name);
+/// \brief Stops a measurement for the \c topic_name topic and ignore the result.
+#define BENCHMARK_STOP_AND_IGNORE(topic_name) \
+  laser_slam::Benchmarker::stopMeasurement(topic_name, true);
 /// \brief Records a value in the \c topic_name topic. Only values of type \c double are supported.
 #define BENCHMARK_RECORD_VALUE(topic_name, value) \
     laser_slam::Benchmarker::addValue(topic_name, value);
@@ -29,9 +34,11 @@ namespace laser_slam {
 /// \brief Reset all topics.
 #define BENCHMARK_RESET_ALL() laser_slam::Benchmarker::resetTopic("");
 #else
+#define BENCHMARK_START_NEW_STEP()
 #define BENCHMARK_BLOCK(topic_name)
 #define BENCHMARK_START(topic_name)
 #define BENCHMARK_STOP(topic_name)
+#define BENCHMARK_STOP_AND_IGNORE(topic_name)
 #define BENCHMARK_RECORD_VALUE(topic_name, value)
 #define BENCHMARK_RESET(topic_prefix)
 #define BENCHMARK_RESET_ALL()
@@ -58,11 +65,15 @@ class Benchmarker {
   /// \brief Prevent static class from being instantiated.
   Benchmarker() = delete;
 
+  /// \brief Notifies the benchmarker that a new step started. All measurements and values added
+  /// after this call will have the same timestamp.
+  static void notifyNewStepStart();
+
   /// \brief Starts a measurement for the \c topic_name topic.
   static void startMeasurement(const std::string& topic_name);
 
   /// \brief Stops a measurement for the \c topic_name topic.
-  static void stopMeasurement(const std::string& topic_name);
+  static void stopMeasurement(const std::string& topic_name, bool ignore_measurement = false);
 
   /// \brief Add a measurement for the \c topic_name topic.
   static void addMeasurement(const std::string& topic_name, const TimePoint& start,
@@ -140,6 +151,9 @@ class Benchmarker {
 
   /// \brief Starting time points of the measurements currently in progress.
   static std::unordered_map<std::string, TimePoint> started_mesurements_;
+
+  /// \brief Timestamp of the step being currently benchmarked.
+  static TimePoint current_timestamp_;
 
   /// \brief Parameters of the benchmarker.
   static BenchmarkerParams params_;

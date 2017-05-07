@@ -20,6 +20,10 @@ namespace laser_slam {
 #define ALIGN_MODIFIERS std::setw(50) << std::setfill(' ') << std::left
 #define FLOAT_MODIFIERS std::fixed << std::setprecision(2)
 
+void Benchmarker::notifyNewStepStart() {
+  current_timestamp_ = Clock::now();
+}
+
 void Benchmarker::startMeasurement(const std::string& topic_name) {
   CHECK_NE(topic_name, "");
   std::lock_guard<std::mutex> lock(started_measurements_mutex_);
@@ -30,13 +34,15 @@ void Benchmarker::startMeasurement(const std::string& topic_name) {
   result.first->second = Clock::now();
 }
 
-void Benchmarker::stopMeasurement(const std::string& topic_name) {
+void Benchmarker::stopMeasurement(const std::string& topic_name, const bool ignore_measurement) {
   CHECK_NE(topic_name, "");
   const TimePoint end = Clock::now();
   std::lock_guard<std::mutex> lock(started_measurements_mutex_);
   const auto start_it = started_mesurements_.find(topic_name);
   if (start_it != started_mesurements_.end()) {
-    addMeasurement(topic_name, start_it->second, end);
+    if (!ignore_measurement) {
+      addMeasurement(topic_name, start_it->second, end);
+    }
     started_mesurements_.erase(start_it);
   } else {
     LOG(WARNING) << "Trying to finish a measurement for topic '" << topic_name << "' which has "
@@ -54,13 +60,13 @@ void Benchmarker::addMeasurement(const std::string& topic_name, const TimePoint&
   }
 
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  value_topics_[topic_name].addValue(start, milliseconds);
+  value_topics_[topic_name].addValue(current_timestamp_, milliseconds);
 }
 
 void Benchmarker::addValue(const std::string& topic_name, const double value) {
   CHECK_NE(topic_name, "");
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  value_topics_[topic_name].addValue(Clock::now(), value);
+  value_topics_[topic_name].addValue(current_timestamp_, value);
 }
 
 void Benchmarker::resetTopic(const std::string& topic_prefix) {
@@ -99,9 +105,10 @@ void Benchmarker::saveData() {
       // Build file name for the topic.
       std::vector<std::string> tokens;
       boost::split(tokens, topic.first, boost::is_any_of(".:-/\\, "));
-      tokens.pop_back();
       fs::path subdir;
-      for (const auto& token : tokens) subdir = subdir / token;
+      for (auto token_it = tokens.begin(); token_it != tokens.end() - 1; ++token_it) {
+        subdir = subdir / *token_it;
+      }
 
       // Create directory and open file.
       fs::create_directories(root / subdir);
@@ -198,6 +205,7 @@ std::mutex Benchmarker::value_topics_mutex_;
 std::mutex Benchmarker::started_measurements_mutex_;
 std::map<std::string, Benchmarker::ValueTopic> Benchmarker::value_topics_;
 std::unordered_map<std::string, Benchmarker::TimePoint> Benchmarker::started_mesurements_;
+Benchmarker::TimePoint Benchmarker::current_timestamp_;
 BenchmarkerParams Benchmarker::params_;
 
 //=================================================================================================

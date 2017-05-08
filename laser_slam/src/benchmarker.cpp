@@ -73,9 +73,13 @@ void Benchmarker::addValue(const std::string& topic_name, const double value) {
 
 void Benchmarker::resetTopic(const std::string& topic_prefix) {
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  for (auto& topic : value_topics_) {
-    if (topic.first.find(topic_prefix) == 0) {
-      topic.second = ValueTopic();
+  for (auto topic_it = value_topics_.begin(); topic_it != value_topics_.end();) {
+    // Delete topics that have the specified prefix.
+    if (topic_it->first.find("Times." + topic_prefix) == 0 ||
+        topic_it->first.find("Values." + topic_prefix) == 0) {
+      value_topics_.erase(topic_it++);
+    } else {
+      ++topic_it;
     }
   }
 }

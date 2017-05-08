@@ -17,11 +17,12 @@ namespace laser_slam {
 //    Benchmarker implementation
 //=================================================================================================
 
-#define ALIGN_MODIFIERS std::setw(50) << std::setfill(' ') << std::left
+#define ALIGN_MODIFIERS std::setw(70) << std::setfill(' ') << std::left
 #define FLOAT_MODIFIERS std::fixed << std::setprecision(2)
 
 void Benchmarker::notifyNewStepStart() {
   current_timestamp_ = Clock::now();
+  ++current_step_id_;
 }
 
 void Benchmarker::startMeasurement(const std::string& topic_name) {
@@ -50,8 +51,8 @@ void Benchmarker::stopMeasurement(const std::string& topic_name, const bool igno
   }
 }
 
-void Benchmarker::addMeasurement(const std::string& topic_name, const TimePoint& start,
-                                 const TimePoint& end) {
+void Benchmarker::addMeasurement(const std::string& topic_name, const TimePoint start,
+                                 const TimePoint end) {
   CHECK_NE(topic_name, "");
   double milliseconds = durationToMilliseconds(end - start);
 
@@ -60,13 +61,14 @@ void Benchmarker::addMeasurement(const std::string& topic_name, const TimePoint&
   }
 
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  value_topics_[topic_name].addValue(current_timestamp_, milliseconds);
+  value_topics_["Times." + topic_name].addValue(current_step_id_, current_timestamp_,
+                                                milliseconds);
 }
 
 void Benchmarker::addValue(const std::string& topic_name, const double value) {
   CHECK_NE(topic_name, "");
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  value_topics_[topic_name].addValue(current_timestamp_, value);
+  value_topics_["Values." + topic_name].addValue(current_step_id_, current_timestamp_, value);
 }
 
 void Benchmarker::resetTopic(const std::string& topic_prefix) {
@@ -79,20 +81,13 @@ void Benchmarker::resetTopic(const std::string& topic_prefix) {
 }
 
 void Benchmarker::saveData() {
-  std::lock_guard<std::mutex> lock(value_topics_mutex_);
   fs::path root(setupAndGetResultsRootDirectory());
 
   // Write statistics
   fs::path statistics_file_path = root / fs::path("statistics.txt");
   std::ofstream out_file(statistics_file_path.string());
-
   if (out_file.is_open()) {
-    out_file << std::endl << ALIGN_MODIFIERS << "Name: " << "Mean (SD)" << std::endl;
-    for (const auto& topic : value_topics_) {
-      out_file << ALIGN_MODIFIERS << (topic.first + ": ")
-               << FLOAT_MODIFIERS << topic.second.getMean() << " ("
-               << FLOAT_MODIFIERS << topic.second.getStandardDeviation() << ")"  << std::endl;
-    }
+    logStatistics(out_file);
     out_file.close();
   } else {
     LOG(INFO) << "Failed to save statistics results to " << statistics_file_path.string();
@@ -100,6 +95,7 @@ void Benchmarker::saveData() {
 
   // Write data for each topic
   if (!params_.save_statistics_only) {
+    std::lock_guard<std::mutex> lock(value_topics_mutex_);
     TimePoint first_timepoint = getFirstValueTimepoint();
     for (const auto& topic : value_topics_) {
       // Build file name for the topic.
@@ -118,8 +114,9 @@ void Benchmarker::saveData() {
       // Write data. Write times in milliseconds relative to the start of the measurements.
       if (out_file.is_open()) {
         for (const auto& value : topic.second.getValues()) {
-          out_file << durationToMilliseconds(value.first - first_timepoint) << " "
-                   << value.second << std::endl;
+          out_file << value.step_id << " "
+                   << durationToMilliseconds(value.timestamp - first_timepoint) << " "
+                   << value.value << std::endl;
         }
         out_file.close();
       } else {
@@ -131,18 +128,18 @@ void Benchmarker::saveData() {
   LOG(INFO) << "Benchmark results saved to " << root.string();
 }
 
-void Benchmarker::logStatistics() {
+void Benchmarker::logStatistics(std::ostream& stream) {
   std::lock_guard<std::mutex> lock(value_topics_mutex_);
-  LOG(INFO) << "";
-  LOG(INFO) << "Statistics:";
-  LOG(INFO) << " " << ALIGN_MODIFIERS << "Topic: " << "Mean (SD)";
+  stream << std::endl;
+  stream << "Statistics:" << std::endl;
+  stream << " " << ALIGN_MODIFIERS << "Topic: " << "Mean (SD)" << std::endl;
 
   for (const auto& topic : value_topics_) {
-    LOG(INFO) << " " << ALIGN_MODIFIERS << (topic.first + ": ")
-                     << FLOAT_MODIFIERS << topic.second.getMean() << " ("
-                     << FLOAT_MODIFIERS << topic.second.getStandardDeviation() << ")";
+    stream << " " << ALIGN_MODIFIERS << (topic.first + ": ")
+                  << FLOAT_MODIFIERS << topic.second.getMean() << " ("
+                  << FLOAT_MODIFIERS << topic.second.getStandardDeviation() << ")" << std::endl;
   }
-  LOG(INFO) << "";
+  stream << "" << std::endl;
 }
 
 std::string Benchmarker::setupAndGetResultsRootDirectory() {
@@ -162,13 +159,13 @@ Benchmarker::TimePoint Benchmarker::getFirstValueTimepoint() {
   TimePoint first_timepoint = TimePoint::max();
   for (const auto& topic : value_topics_) {
     if (!topic.second.getValues().empty()) {
-      first_timepoint = std::min(first_timepoint, topic.second.getValues().front().first);
+      first_timepoint = std::min(first_timepoint, topic.second.getValues().front().timestamp);
     }
   }
   return first_timepoint;
 }
 
-double Benchmarker::durationToMilliseconds(const Duration& duration) {
+double Benchmarker::durationToMilliseconds(const Duration duration) {
   constexpr double mus_to_ms = 1.0 / 1000.0;
   auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
   return static_cast<double>(microseconds) * mus_to_ms;
@@ -178,13 +175,14 @@ double Benchmarker::durationToMilliseconds(const Duration& duration) {
 //    TimerTopic implementation
 //=================================================================================================
 
-void Benchmarker::ValueTopic::addValue(const TimePoint& timestamp, const double value) {
+void Benchmarker::ValueTopic::addValue(const size_t step_id, const TimePoint timestamp,
+                                       const double value) {
   sum_ += value;
   sum_of_squares_ += value * value;
   values_count_++;
 
   if (!Benchmarker::getParameters().save_statistics_only) {
-    values_.emplace_back(timestamp, value);
+    values_.emplace_back(step_id, timestamp, value);
   }
 }
 
@@ -206,6 +204,7 @@ std::mutex Benchmarker::started_measurements_mutex_;
 std::map<std::string, Benchmarker::ValueTopic> Benchmarker::value_topics_;
 std::unordered_map<std::string, Benchmarker::TimePoint> Benchmarker::started_mesurements_;
 Benchmarker::TimePoint Benchmarker::current_timestamp_;
+size_t Benchmarker::current_step_id_ = 0u;
 BenchmarkerParams Benchmarker::params_;
 
 //=================================================================================================

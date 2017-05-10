@@ -82,6 +82,11 @@ void Benchmarker::resetTopic(const std::string& topic_prefix) {
       ++topic_it;
     }
   }
+
+  if (topic_prefix == "") {
+    current_timestamp_ = Clock::now();
+    current_step_id_ = 0u;
+  }
 }
 
 void Benchmarker::saveData() {

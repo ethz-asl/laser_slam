@@ -86,7 +86,7 @@ class Benchmarker {
   /// \brief Add a measurement for the \c topic_name topic.
   /// \param topic_name Name of the topic to which the measurement belongs.
   /// \param start The timestamp representing the start of the measurement.
-  /// \param start The timestamp representing the end of the measurement.
+  /// \param end The timestamp representing the end of the measurement.
   static void addMeasurement(const std::string& topic_name, const TimePoint start,
                              const TimePoint end);
 
@@ -150,7 +150,7 @@ class Benchmarker {
     double sum_of_squares_ = 0.0;
 
     // The number of values recorded.
-    uint64_t values_count_ = 0;
+    uint64_t values_count_ = 0u;
 
     // The collected values.
     std::vector<ValueEntry> values_;
@@ -190,8 +190,7 @@ class ScopedTimer {
   /// \brief Default constructor. Starts the timer.
   /// \param topic_name Name of the topic to which the measurement belongs.
   ScopedTimer(const std::string& topic_name)
-   : topic_name_(topic_name)
-   , start_(Benchmarker::Clock::now()) {
+   : topic_name_(topic_name), start_(Benchmarker::Clock::now()) {
   }
 
   /// \brief Destructor. Stops the timer and commits the result to the benchmarker.

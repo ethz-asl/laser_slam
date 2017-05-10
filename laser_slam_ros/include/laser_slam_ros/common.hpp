@@ -1,8 +1,8 @@
 #ifndef LASER_SLAM_ROS_COMMON_HPP_
 #define LASER_SLAM_ROS_COMMON_HPP_
 
-#include <laser_slam/parameters.hpp>
 #include <laser_slam/benchmarker.hpp>
+#include <laser_slam/parameters.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>

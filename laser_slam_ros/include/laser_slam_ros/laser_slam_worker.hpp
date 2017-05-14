@@ -59,6 +59,14 @@ class LaserSlamWorker {
   void updateLocalMap(const laser_slam::SE3& last_pose_before_update,
                       const laser_slam::Time last_pose_before_update_timestamp_ns);
 
+  /// \brief Computes the transform between a start pose and the pose evaluated at the specified
+  /// end timestamp.
+  /// \param start_pose The starting pose.
+  /// \param end_pose Timestamp of the end pose.
+  /// \return Transform between the two poses.
+  laser_slam::SE3 getTransformBetweenPoses(const laser_slam::SE3& start_pose,
+                                           const laser_slam::Time end_pose_timestamp_ns) const;
+
   void setLockScanCallback(bool new_state);
 
   void displayTimings() const;

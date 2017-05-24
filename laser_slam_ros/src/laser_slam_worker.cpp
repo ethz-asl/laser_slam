@@ -515,6 +515,15 @@ void LaserSlamWorker::updateLocalMap(const SE3& last_pose_before_update,
   }
 }
 
+laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(
+    const laser_slam::SE3& start_pose, const laser_slam::Time end_pose_timestamp_ns) const {
+  Trajectory new_trajectory;
+  laser_track_->getTrajectory(&new_trajectory);
+
+  SE3 last_pose = new_trajectory.at(end_pose_timestamp_ns);
+  return last_pose * start_pose.inverse();
+}
+
 void LaserSlamWorker::displayTimings() const {
   /*std::vector<double> scan_matching_times;
   laser_track_->getScanMatchingTimes(&scan_matching_times);

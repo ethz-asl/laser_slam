@@ -385,7 +385,6 @@ std::vector<laser_slam_ros::PointCloud> LaserSlamWorker::getQueuedPoints() {
 
 // TODO one shot of cleaning.
 void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
-  BENCHMARK_BLOCK(LS_getFilteredMap);
   laser_slam::Pose current_pose = laser_track_->getCurrentPose();
 
   PclPoint current_position;
@@ -398,7 +397,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   {
     std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
     local_map = local_map_;
-    BENCHMARK_BLOCK(LS_cylindricalFilter);
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, false, &local_map_);
   }

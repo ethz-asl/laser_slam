@@ -177,7 +177,8 @@ static void convert_to_pcl_point_cloud(const sensor_msgs::PointCloud2& cloud_mes
   pcl::fromPCLPointCloud2(pcl_point_cloud_2, *converted);
 }
 
-static void convert_to_point_cloud_2_msg(const PointICloud& cloud,
+template<typename PointCloudT>
+static void convert_to_point_cloud_2_msg(const PointCloudT& cloud,
                                          const std::string& frame,
                                          sensor_msgs::PointCloud2* converted) {
   CHECK_NOTNULL(converted);
@@ -188,14 +189,6 @@ static void convert_to_point_cloud_2_msg(const PointICloud& cloud,
   pcl_conversions::fromPCL(pcl_point_cloud_2, *converted);
   // Apply frame to msg.
   converted->header.frame_id = frame;
-}
-
-static void convert_to_point_cloud_2_msg(const PointCloud& cloud,
-                                         const std::string& frame,
-                                         sensor_msgs::PointCloud2* converted) {
-  PointICloud cloud_i;
-  pcl::copyPointCloud(cloud, cloud_i);
-  convert_to_point_cloud_2_msg(cloud_i, frame, converted);
 }
 
 static void applyCylindricalFilter(const PclPoint& center, double radius_m,

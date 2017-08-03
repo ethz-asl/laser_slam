@@ -52,11 +52,6 @@ class IncrementalEstimator {
                               const gtsam::Values& new_values,
                               const unsigned int worker_id);
 
-  void getEstimationTimes(std::map<laser_slam::Time, double>* estimation_times) const {
-    CHECK_NOTNULL(estimation_times);
-    *estimation_times = estimation_times_;
-  }
-
  private:
   unsigned int n_laser_slam_workers_;
 
@@ -82,9 +77,6 @@ class IncrementalEstimator {
   std::vector<unsigned int> worker_ids_with_removed_prior_;
 
   std::unordered_map<unsigned int, unsigned int> if_first_then_remove_second_;
-
-  std::map<laser_slam::Time, double> estimation_times_;
-
 
   // Parameters.
   EstimatorParams params_;

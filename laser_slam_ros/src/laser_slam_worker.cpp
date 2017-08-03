@@ -190,7 +190,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
               matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
         }
 
-        publishTrajectories();
+        // publishTrajectories();
 
         // Get the last cloud in world frame.
         DataPoints new_fixed_cloud;
@@ -522,43 +522,10 @@ laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(
   return last_pose * start_pose.inverse();
 }
 
-void LaserSlamWorker::displayTimings() const {
-  /*std::vector<double> scan_matching_times;
-  laser_track_->getScanMatchingTimes(&scan_matching_times);
-
-  double mean, sigma;
-  getMeanAndSigma(scan_matching_times, &mean, &sigma);
-  LOG(INFO) << "Scan matching times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  std::vector<double> estimation_times;
-  incremental_estimator_->getEstimationTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  incremental_estimator_->getEstimationAndRemoveTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation and remove times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-   */
-}
-
-void LaserSlamWorker::saveTimings() const {
-  std::map<Time, double> scan_matching_times;
-  Eigen::MatrixXd matrix;
-  laser_track_->getScanMatchingTimes(&scan_matching_times);
-  toEigenMatrixXd(scan_matching_times, &matrix);
-  writeEigenMatrixXdCSV(matrix, "/tmp/timing_icp_" + std::to_string(worker_id_) + ".csv");
-
-  std::map<Time, double> estimation_times;
-  incremental_estimator_->getEstimationTimes(&estimation_times);
-  toEigenMatrixXd(estimation_times, &matrix);
-  writeEigenMatrixXdCSV(matrix, "/tmp/timing_estimation.csv");
-
+void LaserSlamWorker::exportTrajectories() const {
   Trajectory traj;
   laser_track_->getTrajectory(&traj);
+  Eigen::MatrixXd matrix;
   matrix.resize(traj.size(), 4);
   unsigned int i = 0u;
   for (const auto& pose : traj) {

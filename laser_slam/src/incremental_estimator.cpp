@@ -152,7 +152,6 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
                                       const gtsam::Values& new_values,
                                       laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  Clock clock;
   // Update and force relinearization.
   isam2_.update(new_factors, new_values).print();
   // TODO Investigate why these two subsequent update calls are needed.
@@ -160,10 +159,6 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
-
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
-  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
@@ -175,7 +170,6 @@ Values IncrementalEstimator::estimateAndRemove(
     laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
 
-  Clock clock;
   CHECK_EQ(affected_worker_ids.size(), 2u);
   gtsam::NonlinearFactorGraph new_factors_to_add = new_factors;
   // Find and update the factor indices to remove.
@@ -230,10 +224,6 @@ Values IncrementalEstimator::estimateAndRemove(
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
-
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
-  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 

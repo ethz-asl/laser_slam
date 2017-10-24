@@ -344,7 +344,9 @@ void LaserSlamWorker::publishMap() {
 void LaserSlamWorker::publishTrajectories() {
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
-  publishTrajectory(trajectory, trajectory_pub_);
+  if (!trajectory.empty()) {
+      publishTrajectory(trajectory, trajectory_pub_);
+  }
 }
 
 // TODO can we move?

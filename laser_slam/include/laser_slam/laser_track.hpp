@@ -232,7 +232,7 @@ class LaserTrack {
   // Parameters.
   LaserTrackParams params_;
 
-  static constexpr double kDistanceBetweenPriorPoses_m = 100.0;
+  static constexpr double kDistanceBetweenPriorPoses_m = 250.0;
 };
 
 }  // namespace laser_slam

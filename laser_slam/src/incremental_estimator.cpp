@@ -152,7 +152,6 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
                                       const gtsam::Values& new_values,
                                       laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
-  Clock clock;
   // Update and force relinearization.
   isam2_.update(new_factors, new_values).print();
   // TODO Investigate why these two subsequent update calls are needed.
@@ -160,10 +159,6 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
-
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
-  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
@@ -175,53 +170,85 @@ Values IncrementalEstimator::estimateAndRemove(
     laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
 
-  Clock clock;
   CHECK_EQ(affected_worker_ids.size(), 2u);
   gtsam::NonlinearFactorGraph new_factors_to_add = new_factors;
   // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
-  if (affected_worker_ids.at(0u) != affected_worker_ids.at(1u)) {
-    // Remove the prior of the worker with the largest ID if not already removed.
-    const unsigned int max_id = std::max(affected_worker_ids.at(0u),
-                                         affected_worker_ids.at(1u));
-
-    const unsigned int min_id = std::min(affected_worker_ids.at(0u),
-                                         affected_worker_ids.at(1u));
-
-    unsigned int worker_id_to_remove = max_id;
-
-    if (min_id != 0u) {
-      if_first_then_remove_second_.emplace(worker_id_to_remove,
-                                           min_id);
-    }
-
-    if (std::find(worker_ids_with_removed_prior_.begin(),
-                  worker_ids_with_removed_prior_.end(), worker_id_to_remove) !=
-                      worker_ids_with_removed_prior_.end()) {
-      worker_id_to_remove = std::min(affected_worker_ids.at(0u),
-                                     affected_worker_ids.at(1u));
-
-    }
-
-    if (factor_indices_to_remove_.count(worker_id_to_remove) != 1u) {
-      if (min_id == 0u) {
-        if (if_first_then_remove_second_.find(max_id) !=
-            if_first_then_remove_second_.end()) {
-          worker_id_to_remove = if_first_then_remove_second_.at(max_id);
-        }
+  
+  std::string linked_workers_print = "";
+  for (size_t i = 0u; i < linked_workers_.size(); ++i) {
+      linked_workers_print += "Group " + std::to_string(i) + ": ";
+      for (const auto& worker_id : linked_workers_[i]) {
+          linked_workers_print +=  std::to_string(worker_id) + " ";
       }
-    }
-
-    CHECK_LT(factor_indices_to_remove_.count(worker_id_to_remove), 2u);
-    if (factor_indices_to_remove_.count(worker_id_to_remove) == 1u) {
-      factor_indices_to_remove.push_back(factor_indices_to_remove_.at(worker_id_to_remove));
-      factor_indices_to_remove_.erase(worker_id_to_remove);
-      worker_ids_with_removed_prior_.push_back(worker_id_to_remove);
-
-      // If we remove a prior use proper noise model.
-      new_factors_to_add = new_associations_factors;
-    }
   }
+  LOG(INFO) << "linked_workers before " << linked_workers_print;
+  
+  // No factor to remove if the ids are the same.
+  const unsigned int first_worker_id = affected_worker_ids.at(0u);
+  const unsigned int second_worker_id = affected_worker_ids.at(1u);
+  unsigned int worker_id_being_removed;
+  if (first_worker_id != second_worker_id) {
+      // Check whether the trajectories are already linked.
+      std::vector<std::vector<unsigned int> >::iterator it_first_worker_group, it_second_worker_group;
+      bool workers_are_already_linked = false;
+      for (std::vector<std::vector<unsigned int> >::iterator it = linked_workers_.begin();
+          it != linked_workers_.end(); ++it) {
+            bool first_worker_found = false;
+            bool second_worker_found = false;
+            if (std::find(it->begin(), it->end(), first_worker_id) != it->end()) {
+                it_first_worker_group = it;
+                first_worker_found = true;
+            }
+            if (std::find(it->begin(), it->end(), second_worker_id) != it->end()) {
+                it_second_worker_group = it;
+                second_worker_found = true;
+            }
+            if (first_worker_found && second_worker_found) {
+                workers_are_already_linked = true;
+            }
+      }
+
+      if (!workers_are_already_linked) {
+          // Check which group should be removed (if one contains ID 0 it should be kept). 
+          std::vector<std::vector<unsigned int> >::iterator it_group_to_keep, it_group_to_remove;
+          if (std::find(it_first_worker_group->begin(), it_first_worker_group->end(), 0u) 
+                    != it_first_worker_group->end()) {
+              it_group_to_keep = it_first_worker_group;
+              it_group_to_remove = it_second_worker_group;
+          } else {
+              it_group_to_keep = it_second_worker_group;
+              it_group_to_remove = it_first_worker_group;
+          }
+          // Find the factor id of the prior of the group to remove and link the groups.
+          for (const auto& worker_id : *it_group_to_remove) {
+              if (factor_indices_to_remove_.count(worker_id) == 1u) {
+                  factor_indices_to_remove.push_back(factor_indices_to_remove_.at(worker_id));
+                  factor_indices_to_remove_.erase(worker_id);
+                  worker_id_being_removed = worker_id;
+              }
+              it_group_to_keep->push_back(worker_id);
+              
+          }
+          CHECK_EQ(factor_indices_to_remove.size(), 1u);
+
+          // Erase the group to remove.
+          linked_workers_.erase(it_group_to_remove);
+      }
+  }
+  
+  if (!factor_indices_to_remove.empty()) {
+      LOG(INFO) << "Removing prior on worker id " << worker_id_being_removed;
+  }
+  
+  linked_workers_print = "";
+  for (size_t i = 0u; i < linked_workers_.size(); ++i) {
+      linked_workers_print += "Group " + std::to_string(i) + ": ";
+      for (const auto& worker_id : linked_workers_[i]) {
+          linked_workers_print +=  std::to_string(worker_id) + " ";
+      }
+  }
+  LOG(INFO) << "linked_workers after " << linked_workers_print;
 
   isam2_.update(new_factors_to_add, new_values, factor_indices_to_remove).print();
 
@@ -230,10 +257,6 @@ Values IncrementalEstimator::estimateAndRemove(
   isam2_.update();
 
   Values result(isam2_.calculateEstimate());
-
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << "ms to estimate the trajectory.";
-  estimation_times_.emplace(timestamp_ns, clock.getRealTime());
   return result;
 }
 
@@ -248,6 +271,10 @@ gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGr
     factor_indices_to_remove_.insert(
         std::make_pair(worker_id, update_result.newFactorsIndices.at(0u)));
   }
+  std::vector<unsigned int> new_linked_worker;
+  new_linked_worker.push_back(worker_id);
+  linked_workers_.push_back(new_linked_worker);
+  
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
   isam2_.update();

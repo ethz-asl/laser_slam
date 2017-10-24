@@ -69,9 +69,7 @@ class LaserSlamWorker {
 
   void setLockScanCallback(bool new_state);
 
-  void displayTimings() const;
-
-  void saveTimings() const;
+  void exportTrajectories() const;
 
   void exportTrajectoryHead(laser_slam::Time head_duration_ns, const std::string& filename) const;
 

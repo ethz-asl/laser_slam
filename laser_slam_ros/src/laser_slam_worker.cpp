@@ -236,11 +236,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         if (params_.create_filtered_map) {
           if (new_fixed_cloud_pcl.size() > 0u) {
             std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
-            if (local_map_.size() > 0u) {
-              local_map_ += new_fixed_cloud_pcl;
-            } else {
-              local_map_ = new_fixed_cloud_pcl;
-            }
             local_map_queue_.push_back(new_fixed_cloud_pcl);
           }
         }
@@ -313,34 +308,6 @@ void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
   publisher.publish(traj_msg);
 }
 
-void LaserSlamWorker::publishMap() {
-  // TODO make thread safe.
-  if (local_map_.size() > 0) {
-    PointCloud filtered_map;
-    getFilteredMap(&filtered_map);
-
-    //maximumNumberPointsFilter(&filtered_map);
-    //    if (params_.publish_full_map) {
-    //      sensor_msgs::PointCloud2 msg;
-    //      convert_to_point_cloud_2_msg(filtered_map, params_.world_frame, &msg);
-    //      point_cloud_pub_.publish(msg);
-    //    }
-    if (params_.publish_local_map) {
-      sensor_msgs::PointCloud2 msg;
-      {
-        std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
-        convert_to_point_cloud_2_msg(local_map_filtered_, params_.world_frame, &msg);
-      }
-      local_map_pub_.publish(msg);
-    }
-    //    if (params_.publish_distant_map) {
-    //      sensor_msgs::PointCloud2 msg;
-    //      convert_to_point_cloud_2_msg(distant_map_, params_.world_frame, &msg);
-    //      distant_map_pub_.publish(msg);
-    //    }
-  }
-}
-
 void LaserSlamWorker::publishTrajectories() {
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
@@ -383,102 +350,6 @@ std::vector<laser_slam_ros::PointCloud> LaserSlamWorker::getQueuedPoints() {
   return new_points;
 }
 
-// TODO one shot of cleaning.
-void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
-  laser_slam::Pose current_pose = laser_track_->getCurrentPose();
-
-  PclPoint current_position;
-  current_position.x = current_pose.T_w.getPosition()[0];
-  current_position.y = current_pose.T_w.getPosition()[1];
-  current_position.z = current_pose.T_w.getPosition()[2];
-
-  // Apply the cylindrical filter on the local map and get a copy.
-  PointCloud local_map;
-  {
-    std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
-    local_map = local_map_;
-    applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
-                           40, false, &local_map_);
-  }
-
-  // Apply a voxel filter.
-  laser_slam::Clock clock;
-
-  PointCloudPtr local_map_ptr(new PointCloud());
-  pcl::copyPointCloud<PclPoint, PclPoint>(local_map, *local_map_ptr);
-
-  PointCloud local_map_filtered;
-
-  voxel_filter_.setInputCloud(local_map_ptr);
-  voxel_filter_.filter(local_map_filtered);
-
-  clock.takeTime();
-
-  if (params_.separate_distant_map) {
-    // If separating the map is enabled, the distance between each point in the local_map_ will
-    // be compared to the current robot position. Points which are far from the robot will
-    // be transfered to the distant_map_. This is helpful for publishing (points in distant_map_
-    // need to be filtered only once) and for any other processing which needs to be done only
-    // when a map is distant from robot and can be assumed as static (until loop closure).
-
-    // TODO(renaud) Is there a way to separate the cloud without having to transform in sensor
-    // frame by setting the position to compute distance from?
-    // Transform local_map_ in sensor frame.
-    clock.start();
-
-    // Save before removing points.
-    PointCloud new_distant_map = local_map_filtered;
-
-    applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
-                           40, false, &local_map_filtered);
-
-    applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
-                           40, true, &new_distant_map);
-
-    {
-      std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
-      local_map_filtered_ = local_map_filtered;
-    }
-
-    // Add the new_distant_map to the distant_map_.
-    // TODO add lock if used
-    if (distant_map_.size() > 0u) {
-      distant_map_ += new_distant_map;
-    } else {
-      distant_map_ = new_distant_map;
-    }
-
-    *filtered_map = local_map_filtered;
-    *filtered_map += distant_map_;
-
-    clock.takeTime();
-    // LOG(INFO) << "new_local_map.size() " << local_map.size();
-    // LOG(INFO) << "new_distant_map.size() " << new_distant_map.size();
-    // LOG(INFO) << "distant_map_.size() " << distant_map_.size();
-    // LOG(INFO) << "Separating done! Took " << clock.getRealTime() << " ms.";
-  } else {
-    *filtered_map = local_map;
-  }
-}
-
-void LaserSlamWorker::getLocalMapFiltered(PointCloud* local_map_filtered) {
-  CHECK_NOTNULL(local_map_filtered);
-  std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
-  *local_map_filtered = local_map_filtered_;
-}
-
-void LaserSlamWorker::clearLocalMap() {
-  {
-    std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
-    local_map_.clear();
-  }
-
-  {
-    std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
-    local_map_filtered_.clear();
-  }
-}
-
 tf::StampedTransform LaserSlamWorker::getWorldToOdom() {
   std::lock_guard<std::recursive_mutex> lock_world_to_odom(world_to_odom_mutex_);
   tf::StampedTransform world_to_odom = world_to_odom_;
@@ -491,26 +362,6 @@ void LaserSlamWorker::getTrajectory(Trajectory* out_trajectory) const {
 
 void LaserSlamWorker::getOdometryTrajectory(Trajectory* out_trajectory) const {
   laser_track_->getOdometryTrajectory(out_trajectory);
-}
-
-void LaserSlamWorker::updateLocalMap(const SE3& last_pose_before_update,
-                                     const laser_slam::Time last_pose_before_update_timestamp_ns) {
-
-  Trajectory new_trajectory;
-  laser_track_->getTrajectory(&new_trajectory);
-
-  SE3 new_last_pose = new_trajectory.at(last_pose_before_update_timestamp_ns);
-
-  const Eigen::Matrix4f transform_matrix = (new_last_pose * last_pose_before_update.inverse()).
-      getTransformationMatrix().cast<float>();
-  {
-    std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
-    pcl::transformPointCloud(local_map_, local_map_, transform_matrix);
-  }
-  {
-    std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
-    pcl::transformPointCloud(local_map_filtered_, local_map_filtered_, transform_matrix);
-  }
 }
 
 laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(

@@ -33,31 +33,18 @@ class LaserSlamWorker {
   void publishTrajectory(const laser_slam::Trajectory& trajectory,
                          const ros::Publisher& publisher) const;
 
-  /// \brief Publish the map.
-  void publishMap();
-
   /// \brief Publish the estimated trajectory and the odometry only based trajectory.
   void publishTrajectories();
-
-  void getLocalMapFiltered(laser_slam_ros::PointCloud* local_map_filtered);
-
-  // Get a filtered map and apply map separation if desired.
-  void getFilteredMap(laser_slam_ros::PointCloud* filtered_map);
 
   // Get a vector containing the optimized point clouds recorded since
   // the last call to this method. This call clears the point cloud queue.
   std::vector<laser_slam_ros::PointCloud> getQueuedPoints();
-
-  void clearLocalMap();
 
   tf::StampedTransform getWorldToOdom();
 
   void getTrajectory(laser_slam::Trajectory* out_trajectory) const;
 
   void getOdometryTrajectory(laser_slam::Trajectory* out_trajectory) const;
-
-  void updateLocalMap(const laser_slam::SE3& last_pose_before_update,
-                      const laser_slam::Time last_pose_before_update_timestamp_ns);
 
   /// \brief Computes the transform between a start pose and the pose evaluated at the specified
   /// end timestamp.
@@ -135,9 +122,7 @@ class LaserSlamWorker {
   // Pointer to the incremental estimator.
   std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator_;
 
-  // Contains the map which is estimated by the sliding window.
-  // TODO(mattia): switch from local_map_ to local_map_queue_
-  laser_slam_ros::PointCloud local_map_;
+  // Queue of points that have been registered, but have not been processed yet.
   std::vector<laser_slam_ros::PointCloud> local_map_queue_;
 
   laser_slam_ros::PointCloud local_map_filtered_;

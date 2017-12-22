@@ -191,37 +191,6 @@ static void convert_to_point_cloud_2_msg(const PointCloudT& cloud,
   converted->header.frame_id = frame;
 }
 
-static void applyCylindricalFilter(const PclPoint& center, double radius_m,
-                                   double height_m, bool remove_point_inside,
-                                   PointCloud* cloud) {
-  CHECK_NOTNULL(cloud);
-  PointCloud filtered_cloud;
-
-  const double radius_squared = pow(radius_m, 2.0);
-  const double height_halved_m = height_m / 2.0;
-
-  for (size_t i = 0u; i < cloud->size(); ++i) {
-    if (remove_point_inside) {
-      if ((pow(cloud->points[i].x - center.x, 2.0)
-          + pow(cloud->points[i].y - center.y, 2.0)) >= radius_squared ||
-          abs(cloud->points[i].z - center.z) >= height_halved_m) {
-        filtered_cloud.points.push_back(cloud->points[i]);
-      }
-    } else {
-      if ((pow(cloud->points[i].x - center.x, 2.0)
-          + pow(cloud->points[i].y - center.y, 2.0)) <= radius_squared &&
-          abs(cloud->points[i].z - center.z) <= height_halved_m) {
-        filtered_cloud.points.push_back(cloud->points[i]);
-      }
-    }
-  }
-
-  filtered_cloud.width = 1;
-  filtered_cloud.height = filtered_cloud.points.size();
-
-  *cloud = filtered_cloud;
-}
-
 } // namespace laser_slam_ros
 
 #endif // LASER_SLAM_ROS_COMMON_HPP_

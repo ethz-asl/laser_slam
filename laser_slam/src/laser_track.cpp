@@ -167,6 +167,8 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
       double position_x = 0.0;
       double position_y = 0.0;
       
+      if (params_.force_priors) {
+      
       if (laser_track_id_ == 1) {
           position_x = kDistanceBetweenPriorPoses_m;
       } else if (laser_track_id_ == 2) { 
@@ -174,14 +176,20 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
       } else if (laser_track_id_ == 3) { 
           position_x = 1.6*kDistanceBetweenPriorPoses_m; //-0.6*kDistanceBetweenPriorPoses_m;
           position_y = 0.7*kDistanceBetweenPriorPoses_m;
-      } else if (laser_track_id_ == 4) { 
-          position_y = -0.5*kDistanceBetweenPriorPoses_m;
-          position_x = 0.6*kDistanceBetweenPriorPoses_m;
-      }
-      
-      if (params_.force_priors) {
-        prior_pose.T_w = SE3(SE3::Rotation(1.0, 0.0, 0.0, 0.0),
+                  prior_pose.T_w = SE3(SE3::Rotation(1.0, 0.0, 0.0, 0.0),
                              SE3::Position(position_x, position_y, 0.0));
+      } else if (laser_track_id_ == 4) { 
+          position_y = -0.7*kDistanceBetweenPriorPoses_m;
+          position_x = 0.6*kDistanceBetweenPriorPoses_m;
+                  prior_pose.T_w = SE3(SE3::Rotation(0.7071, 0.0, 0.0, -0.7071),
+                             SE3::Position(position_x, position_y, 0.0));
+          
+               /*     position_y = -0.7*kDistanceBetweenPriorPoses_m;
+          position_x = 1.2*kDistanceBetweenPriorPoses_m;
+                  //prior_pose.T_w = SE3(SE3::Rotation(0.7071, 0.0, 0.0, -0.7071),
+          prior_pose.T_w = SE3(SE3::Rotation(0.0, 0.0, 0.0, 1.0),
+                             SE3::Position(position_x, position_y, 0.0));*/
+      }
       }
 
       newFactors->push_back(makeMeasurementFactor(prior_pose, prior_noise_model_));

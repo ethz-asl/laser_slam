@@ -61,7 +61,7 @@ void LaserSlamWorker::init(
 
   // Setup services.
   get_laser_track_srv_ = nh.advertiseService(
-      params_.get_laser_track_srv_topic,
+      "get_laser_track",
       &LaserSlamWorker::getLaserTracksServiceCall, this);
   export_trajectory_srv_ = nh.advertiseService(
       "export_trajectory",

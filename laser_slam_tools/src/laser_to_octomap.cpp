@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
   // Get laser track.
   ros::ServiceClient client;
-  client = nh.serviceClient<laser_slam_ros::GetLaserTrackSrv>("/laser_mapper/get_laser_track");
+  client = nh.serviceClient<laser_slam_ros::GetLaserTrackSrv>("/segmapper/get_laser_track");
   laser_slam_ros::GetLaserTrackSrv call;
   ROS_INFO("Requested laser track. Waiting...");
   if (!client.call(call)) {

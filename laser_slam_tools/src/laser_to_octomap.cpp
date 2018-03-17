@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
   double prob_hit = 0.9;
   double prob_miss = 0.4;
   double max_range = 20.0;
+  bool publish = true;
 
   // Parse arguments.
   if (argc > 2) {
@@ -99,6 +100,7 @@ int main(int argc, char** argv) {
     // Do insertion.
     manager.transformCallback(call.response.transforms[i]);
     manager.insertPointcloudWithTf(ptr_vec[i]);
+    if (publish) manager.publishAll();
   }
   std::cout << "\r" << std::flush;
   ROS_INFO("Done inserting all clouds");

@@ -266,25 +266,53 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
   ros::Time scan_stamp;
   tf::StampedTransform tf_transform;
   geometry_msgs::TransformStamped ros_transform;
+  std::vector<std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped> > data;
   for (const auto& track: laser_tracks) {
     track->getTrajectory(&trajectory);
     for (const auto& scan: track->getLaserScans()) {
       // Get data.
       scan_stamp.fromNSec(curveTimeToRosTime(scan.time_ns));
-      // Fill response.
-      response.laser_scans.push_back(
-          PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan.scan,
-                                                             params_.sensor_frame,
-                                                             scan_stamp));
+
+      sensor_msgs::PointCloud2 pc = PointMatcher_ros::pointMatcherCloudToRosMsg<float>(
+	scan.scan, params_.sensor_frame, scan_stamp);
+
       tf_transform = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
           trajectory.at(scan.time_ns).getTransformationMatrix().cast<float>(),
           params_.world_frame,
           params_.sensor_frame,
           scan_stamp);
       tf::transformStampedTFToMsg(tf_transform, ros_transform);
-      response.transforms.push_back(ros_transform);
+      
+      data.push_back(std::make_tuple(scan.time_ns, pc, ros_transform));
     }
   }
+  
+  std::sort(data.begin(),data.end(),
+       [](const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& a,
+       const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& b) -> bool
+       {
+         return std::get<0>(a) <= std::get<0>(b);
+       });
+  
+  bool zero_added = false;
+  // Fill response.
+  for (const auto& elem : data) {
+    laser_slam::Time time;
+    sensor_msgs::PointCloud2 pc;
+    geometry_msgs::TransformStamped tf;
+    std::tie(time, pc, tf) = elem;
+    LOG(INFO) << "Time " << time;
+    if (time == 0u) {
+      if (!zero_added) {
+	zero_added = true;
+      } else {
+	continue;
+      }
+    } 
+    response.laser_scans.push_back(pc);
+    response.transforms.push_back(tf);
+  }
+
   return true;
 }
 

@@ -171,7 +171,7 @@ Values IncrementalEstimator::estimateAndRemove(
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
 
   CHECK_EQ(affected_worker_ids.size(), 2u);
-  gtsam::NonlinearFactorGraph new_factors_to_add = new_factors;
+  
   // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
   
@@ -249,7 +249,12 @@ Values IncrementalEstimator::estimateAndRemove(
       }
   }
   LOG(INFO) << "linked_workers after " << linked_workers_print;
-
+  gtsam::NonlinearFactorGraph new_factors_to_add;
+  if (!factor_indices_to_remove.empty()) {
+    new_factors_to_add = new_associations_factors;
+  } else {
+    new_factors_to_add = new_factors;
+  }
   isam2_.update(new_factors_to_add, new_values, factor_indices_to_remove).print();
 
   // TODO Investigate why these two subsequent update calls are needed.

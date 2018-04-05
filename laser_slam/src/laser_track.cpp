@@ -143,10 +143,7 @@ void LaserTrack::processPoseAndLaserScan(const Pose& pose, const LaserScan& in_s
   LaserScan scan = in_scan;
 
   // Apply the input filters.
-  Clock clock;
   input_filters_.apply(scan.scan);
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << " ms to filter the input scan.";
 
   // Save the pose measurement.
   if (pose_measurements_.empty() && pose.time_ns != 0) {
@@ -462,10 +459,7 @@ LaserTrack::makeMeasurementFactor(const Pose& pose_measurement,
 
 void LaserTrack::computeICPTransformations() {
   if (getNumScans() > 1u) {
-    Clock clock;
     localScanToSubMap();
-    clock.takeTime();
-    LOG(INFO) << "Took " << clock.getRealTime() << " ms to compute the ICP transformations.";
   }
 }
 
@@ -477,7 +471,6 @@ void LaserTrack::localScanToSubMap() {
 
   // Transform the last (parameters_.nscan_in_sub_map - 1) scans
   // in the frame of the second last scan.
-  Clock clock;
   const SE3 T_w_to_second_last_scan = trajectory_.evaluate(
       laser_scans_[getNumScans() - 2u].time_ns);
   DataPoints sub_map = laser_scans_[getNumScans() - 2u].scan;
@@ -491,8 +484,6 @@ void LaserTrack::localScanToSubMap() {
 
     sub_map.concatenate(rigid_transformation_->compute(previous_scan.scan,transformation_matrix));
   }
-  clock.takeTime();
-  LOG(INFO) << "Took " << clock.getRealTime() << " ms to build the submap.";
 
   // Obtain the initial guess from the trajectory.
   SE3 initial_guess = trajectory_.evaluate(icp_transformation.time_a_ns).inverse() *

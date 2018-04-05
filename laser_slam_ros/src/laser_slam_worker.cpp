@@ -61,7 +61,7 @@ void LaserSlamWorker::init(
 
   // Setup services.
   get_laser_track_srv_ = nh.advertiseService(
-      params_.get_laser_track_srv_topic,
+      "get_laser_track",
       &LaserSlamWorker::getLaserTracksServiceCall, this);
   export_trajectory_srv_ = nh.advertiseService(
       "export_trajectory",
@@ -266,25 +266,53 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
   ros::Time scan_stamp;
   tf::StampedTransform tf_transform;
   geometry_msgs::TransformStamped ros_transform;
+  std::vector<std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped> > data;
   for (const auto& track: laser_tracks) {
     track->getTrajectory(&trajectory);
     for (const auto& scan: track->getLaserScans()) {
       // Get data.
       scan_stamp.fromNSec(curveTimeToRosTime(scan.time_ns));
-      // Fill response.
-      response.laser_scans.push_back(
-          PointMatcher_ros::pointMatcherCloudToRosMsg<float>(scan.scan,
-                                                             params_.sensor_frame,
-                                                             scan_stamp));
+
+      sensor_msgs::PointCloud2 pc = PointMatcher_ros::pointMatcherCloudToRosMsg<float>(
+	scan.scan, params_.sensor_frame, scan_stamp);
+
       tf_transform = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
           trajectory.at(scan.time_ns).getTransformationMatrix().cast<float>(),
           params_.world_frame,
           params_.sensor_frame,
           scan_stamp);
       tf::transformStampedTFToMsg(tf_transform, ros_transform);
-      response.transforms.push_back(ros_transform);
+      
+      data.push_back(std::make_tuple(scan.time_ns, pc, ros_transform));
     }
   }
+  
+  std::sort(data.begin(),data.end(),
+       [](const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& a,
+       const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& b) -> bool
+       {
+         return std::get<0>(a) <= std::get<0>(b);
+       });
+  
+  bool zero_added = false;
+  // Fill response.
+  for (const auto& elem : data) {
+    laser_slam::Time time;
+    sensor_msgs::PointCloud2 pc;
+    geometry_msgs::TransformStamped tf;
+    std::tie(time, pc, tf) = elem;
+    LOG(INFO) << "Time " << time;
+    if (time == 0u) {
+      if (!zero_added) {
+	zero_added = true;
+      } else {
+	continue;
+      }
+    } 
+    response.laser_scans.push_back(pc);
+    response.transforms.push_back(tf);
+  }
+
   return true;
 }
 
@@ -344,7 +372,7 @@ void LaserSlamWorker::publishMap() {
 void LaserSlamWorker::publishTrajectories() {
   Trajectory trajectory;
   laser_track_->getTrajectory(&trajectory);
-  publishTrajectory(trajectory, trajectory_pub_);
+  if (trajectory.size() > 0u) publishTrajectory(trajectory, trajectory_pub_);
 }
 
 // TODO can we move?
@@ -400,7 +428,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, false, &local_map_);
   }
-
   // Apply a voxel filter.
   laser_slam::Clock clock;
 
@@ -434,7 +461,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
 
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, true, &new_distant_map);
-
     {
       std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
       local_map_filtered_ = local_map_filtered;
@@ -522,43 +548,10 @@ laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(
   return last_pose * start_pose.inverse();
 }
 
-void LaserSlamWorker::displayTimings() const {
-  /*std::vector<double> scan_matching_times;
-  laser_track_->getScanMatchingTimes(&scan_matching_times);
-
-  double mean, sigma;
-  getMeanAndSigma(scan_matching_times, &mean, &sigma);
-  LOG(INFO) << "Scan matching times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  std::vector<double> estimation_times;
-  incremental_estimator_->getEstimationTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-  incremental_estimator_->getEstimationAndRemoveTimes(&estimation_times);
-  getMeanAndSigma(estimation_times, &mean, &sigma);
-  LOG(INFO) << "Estimation and remove times for worker id " << worker_id_ <<
-      ": " << mean << " +/- " << sigma;
-
-   */
-}
-
-void LaserSlamWorker::saveTimings() const {
-  std::map<Time, double> scan_matching_times;
-  Eigen::MatrixXd matrix;
-  laser_track_->getScanMatchingTimes(&scan_matching_times);
-  toEigenMatrixXd(scan_matching_times, &matrix);
-  writeEigenMatrixXdCSV(matrix, "/tmp/timing_icp_" + std::to_string(worker_id_) + ".csv");
-
-  std::map<Time, double> estimation_times;
-  incremental_estimator_->getEstimationTimes(&estimation_times);
-  toEigenMatrixXd(estimation_times, &matrix);
-  writeEigenMatrixXdCSV(matrix, "/tmp/timing_estimation.csv");
-
+void LaserSlamWorker::exportTrajectories() const {
   Trajectory traj;
   laser_track_->getTrajectory(&traj);
+  Eigen::MatrixXd matrix;
   matrix.resize(traj.size(), 4);
   unsigned int i = 0u;
   for (const auto& pose : traj) {
@@ -573,8 +566,6 @@ void LaserSlamWorker::saveTimings() const {
 
 void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
                                            const std::string& filename) const {
-  BENCHMARK_BLOCK(LS_exportTrajectoryHead);
-
   Eigen::MatrixXd matrix;
   Trajectory traj;
   laser_track_->getTrajectory(&traj);

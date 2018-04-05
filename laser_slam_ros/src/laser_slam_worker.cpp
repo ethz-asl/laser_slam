@@ -190,7 +190,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
               matrix, params_.world_frame, params_.odom_frame, cloud_msg_in.header.stamp);
         }
 
-        // publishTrajectories();
+        publishTrajectories();
 
         // Get the last cloud in world frame.
         DataPoints new_fixed_cloud;

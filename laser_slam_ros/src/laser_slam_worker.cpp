@@ -425,12 +425,9 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
   {
     std::lock_guard<std::recursive_mutex> lock(local_map_mutex_);
     local_map = local_map_;
-    BENCHMARK_START("LS.getFilteredMap.firstApplyCylindricalFilter");
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, false, &local_map_);
-    BENCHMARK_STOP("LS.getFilteredMap.firstApplyCylindricalFilter");
   }
-BENCHMARK_START("LS.getFilteredMap.remaining1");
   // Apply a voxel filter.
   laser_slam::Clock clock;
 
@@ -464,7 +461,6 @@ BENCHMARK_START("LS.getFilteredMap.remaining1");
 
     applyCylindricalFilter(current_position, params_.distance_to_consider_fixed,
                            40, true, &new_distant_map);
-    BENCHMARK_STOP("LS.getFilteredMap.remaining1");
     {
       std::lock_guard<std::recursive_mutex> lock(local_map_filtered_mutex_);
       local_map_filtered_ = local_map_filtered;

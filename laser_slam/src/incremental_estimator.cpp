@@ -280,7 +280,10 @@ gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGr
   new_linked_worker.push_back(worker_id);
   linked_workers_.push_back(new_linked_worker);
   
-  // TODO Investigate why these two subsequent update calls are needed.
+  // Each call to iSAM2 update(*) performs one iteration of the iterative nonlinear solver.
+  // If accuracy is desired at the expense of time, update(*) can be called additional times
+  // to perform multiple optimizer iterations every step.
+
   isam2_.update();
   isam2_.update();
   Values result(isam2_.calculateEstimate());

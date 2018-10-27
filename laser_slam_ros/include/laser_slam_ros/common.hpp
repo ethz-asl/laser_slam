@@ -31,6 +31,7 @@ struct LaserSlamWorkerParams {
   double ground_distance_to_robot_center_m;
 
   bool use_odometry_information = true;
+  bool use_loam = false;
 
 
   // Frames.
@@ -71,6 +72,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/ground_distance_to_robot_center_m", params.ground_distance_to_robot_center_m);
 
   nh.getParam(ns + "/use_odometry_information", params.use_odometry_information);
+  nh.getParam(ns + "/use_loam", params.use_loam);
 
   nh.getParam(ns + "/odom_frame", params.odom_frame);
   nh.getParam(ns + "/sensor_frame", params.sensor_frame);

@@ -142,15 +142,19 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
       tf_broadcaster_.sendTransform(tf_transform_segmap);
 
+      if (params_.use_loam) {
+        tf_transform = tf_transform_segmap;
+      }
+
       bool process_scan = false;
       SE3 current_pose;
 
       if (!last_pose_set_) {
         process_scan = true;
         last_pose_set_ = true;
-        last_pose_ = tfTransformToPose(tf_transform_segmap).T_w;
+        last_pose_ = tfTransformToPose(tf_transform).T_w;
       } else {
-        current_pose = tfTransformToPose(tf_transform_segmap).T_w;
+        current_pose = tfTransformToPose(tf_transform).T_w;
         float dist_m = distanceBetweenTwoSE3(current_pose, last_pose_);
         if (dist_m > params_.minimum_distance_to_add_pose) {
           process_scan = true;
@@ -187,7 +191,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         gtsam::Values new_values;
         bool is_prior;
         if (params_.use_odometry_information) {
-          laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform_segmap), new_scan,
+          laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
                                                 &new_factors, &new_values, &is_prior);
         } else {
           Pose new_pose;
@@ -231,7 +235,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
         // Adjust the correction between the world and odom frames.
         Pose current_pose = laser_track_->getCurrentPose();
-        SE3 T_odom_sensor = tfTransformToPose(tf_transform_segmap).T_w;
+        SE3 T_odom_sensor = tfTransformToPose(tf_transform).T_w;
         SE3 T_w_sensor = current_pose.T_w;
         SE3 T_w_odom = T_w_sensor * T_odom_sensor.inverse();
 

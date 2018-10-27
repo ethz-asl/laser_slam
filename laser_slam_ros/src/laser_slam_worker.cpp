@@ -168,21 +168,22 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         new_scan.scan = PointMatcher_ros::rosMsgToPointMatcherCloud<float>(cloud_msg_in);
 
         // LOAM adaptation
+        if (params_.use_loam) {
+          laser_slam::PointMatcher::TransformationParameters R_segmap_loam;
+          R_segmap_loam.resize(4, 4);
+          R_segmap_loam << 0, 0, 1, 0,
+                           1, 0, 0, 0,
+                           0, 1, 0, 0,
+                           0, 0, 0, 1;
 
-        laser_slam::PointMatcher::TransformationParameters R_segmap_loam;
-        R_segmap_loam.resize(4, 4);
-        R_segmap_loam << 0, 0, 1, 0,
-                         1, 0, 0, 0,
-                         0, 1, 0, 0,
-                         0, 0, 0, 1;
+          laser_slam::PointMatcher::Transformation* rigid_transformation;
+          rigid_transformation = laser_slam::PointMatcher::get().REG(Transformation).create("RigidTransformation");
+          new_scan.scan = rigid_transformation->compute(new_scan.scan, R_segmap_loam*T_init_loamodom.inverse());
 
-        laser_slam::PointMatcher::Transformation* rigid_transformation;
-        rigid_transformation = laser_slam::PointMatcher::get().REG(Transformation).create("RigidTransformation");
-        new_scan.scan = rigid_transformation->compute(new_scan.scan, R_segmap_loam*T_init_loamodom.inverse());
-
-        sensor_msgs::PointCloud2 msg;
-        convert_to_point_cloud_2_msg(laser_slam_ros::lpmToPcl(new_scan.scan), "/camera_init", &msg);
-        registered_scan_pub_.publish(msg);
+          sensor_msgs::PointCloud2 msg;
+          convert_to_point_cloud_2_msg(laser_slam_ros::lpmToPcl(new_scan.scan), "/camera_init", &msg);
+          registered_scan_pub_.publish(msg);
+        }
 
         new_scan.time_ns = rosTimeToCurveTime(cloud_msg_in.header.stamp.toNSec());
 

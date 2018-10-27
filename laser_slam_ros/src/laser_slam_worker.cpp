@@ -621,6 +621,10 @@ void LaserSlamWorker::exportTrajectories() const {
     matrix(i,1) = pose.second.getPosition()(0);
     matrix(i,2) = pose.second.getPosition()(1);
     matrix(i,3) = pose.second.getPosition()(2);
+    matrix(i,4) = pose.second.getRotation().x();
+    matrix(i,5) = pose.second.getRotation().y();
+    matrix(i,6) = pose.second.getRotation().z();
+    matrix(i,7) = pose.second.getRotation().w();
     ++i;
   }
   writeEigenMatrixXdCSV(matrix, "/tmp/trajectory_" + std::to_string(worker_id_) + ".csv");

@@ -10,6 +10,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <std_srvs/Empty.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
 
 #include "laser_slam_ros/GetLaserTrackSrv.h"
 #include "laser_slam_ros/common.hpp"
@@ -119,6 +120,7 @@ class LaserSlamWorker {
   // Publishers.
   ros::Publisher trajectory_pub_;
   ros::Publisher local_map_pub_;
+  ros::Publisher registered_scan_pub_;
   //  ros::Publisher odometry_trajectory_pub_;
   //  ros::Publisher point_cloud_pub_;
   //  ros::Publisher distant_map_pub_;
@@ -129,6 +131,7 @@ class LaserSlamWorker {
   ros::ServiceServer export_trajectory_srv_;
 
   tf::TransformListener tf_listener_;
+  tf::TransformBroadcaster tf_broadcaster_;
 
   // Pointer to the incremental estimator.
   std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator_;

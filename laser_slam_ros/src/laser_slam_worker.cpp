@@ -59,6 +59,9 @@ void LaserSlamWorker::init(
                                                             kPublisherQueueSize);
   }
 
+  registered_scan_pub_ = nh.advertise<sensor_msgs::PointCloud2>("registered_scan",
+                                                            kPublisherQueueSize);
+
   // Setup services.
   get_laser_track_srv_ = nh.advertiseService(
       "get_laser_track",
@@ -103,15 +106,51 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       tf_listener_.lookupTransform(params_.odom_frame, params_.sensor_frame,
                                    cloud_msg_in.header.stamp, tf_transform);
 
+      // LOAM adaptation
+      // Transform loam camera to camera init
+      laser_slam::PointMatcher::TransformationParameters T_init_loamodom;
+      T_init_loamodom = tfTransformToPose(tf_transform).T_w.getTransformationMatrix().cast<float>();
+      correctTransformationMatrix(&T_init_loamodom);
+
+      // Publish corrected odom pose
+      laser_slam::PointMatcher::TransformationParameters T_init_segmapodom;
+      T_init_segmapodom.resize(4,4);
+
+      T_init_segmapodom(0,0) = T_init_loamodom(2,2);
+      T_init_segmapodom(1,0) = T_init_loamodom(0,2);
+      T_init_segmapodom(2,0) = T_init_loamodom(1,2);
+      T_init_segmapodom(3,0) = T_init_loamodom(3,2);
+
+      T_init_segmapodom(0,1) = T_init_loamodom(2,0);
+      T_init_segmapodom(1,1) = T_init_loamodom(0,0);
+      T_init_segmapodom(2,1) = T_init_loamodom(1,0);
+      T_init_segmapodom(3,1) = T_init_loamodom(3,0);
+
+      T_init_segmapodom(0,2) = T_init_loamodom(2,1);
+      T_init_segmapodom(1,2) = T_init_loamodom(0,1);
+      T_init_segmapodom(2,2) = T_init_loamodom(1,1);
+      T_init_segmapodom(3,2) = T_init_loamodom(3,1);
+
+      T_init_segmapodom(0,3) = T_init_loamodom(2,3);
+      T_init_segmapodom(1,3) = T_init_loamodom(0,3);
+      T_init_segmapodom(2,3) = T_init_loamodom(1,3);
+      T_init_segmapodom(3,3) = T_init_loamodom(3,3);
+
+      tf::StampedTransform tf_transform_segmap;
+      tf_transform_segmap = PointMatcher_ros::eigenMatrixToStampedTransform<float>(
+          T_init_segmapodom, params_.odom_frame, "/camera_segmap", tf_transform.stamp_);
+
+      tf_broadcaster_.sendTransform(tf_transform_segmap);
+
       bool process_scan = false;
       SE3 current_pose;
 
       if (!last_pose_set_) {
         process_scan = true;
         last_pose_set_ = true;
-        last_pose_ = tfTransformToPose(tf_transform).T_w;
+        last_pose_ = tfTransformToPose(tf_transform_segmap).T_w;
       } else {
-        current_pose = tfTransformToPose(tf_transform).T_w;
+        current_pose = tfTransformToPose(tf_transform_segmap).T_w;
         float dist_m = distanceBetweenTwoSE3(current_pose, last_pose_);
         if (dist_m > params_.minimum_distance_to_add_pose) {
           process_scan = true;
@@ -123,6 +162,24 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         // Convert input cloud to laser scan.
         LaserScan new_scan;
         new_scan.scan = PointMatcher_ros::rosMsgToPointMatcherCloud<float>(cloud_msg_in);
+
+        // LOAM adaptation
+
+        laser_slam::PointMatcher::TransformationParameters R_segmap_loam;
+        R_segmap_loam.resize(4, 4);
+        R_segmap_loam << 0, 0, 1, 0,
+                         1, 0, 0, 0,
+                         0, 1, 0, 0,
+                         0, 0, 0, 1;
+
+        laser_slam::PointMatcher::Transformation* rigid_transformation;
+        rigid_transformation = laser_slam::PointMatcher::get().REG(Transformation).create("RigidTransformation");
+        new_scan.scan = rigid_transformation->compute(new_scan.scan, R_segmap_loam*T_init_loamodom.inverse());
+
+        sensor_msgs::PointCloud2 msg;
+        convert_to_point_cloud_2_msg(laser_slam_ros::lpmToPcl(new_scan.scan), "/camera_init", &msg);
+        registered_scan_pub_.publish(msg);
+
         new_scan.time_ns = rosTimeToCurveTime(cloud_msg_in.header.stamp.toNSec());
 
         // Process the new scan and get new values and factors.
@@ -130,7 +187,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         gtsam::Values new_values;
         bool is_prior;
         if (params_.use_odometry_information) {
-          laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform), new_scan,
+          laser_track_->processPoseAndLaserScan(tfTransformToPose(tf_transform_segmap), new_scan,
                                                 &new_factors, &new_values, &is_prior);
         } else {
           Pose new_pose;
@@ -174,7 +231,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
         // Adjust the correction between the world and odom frames.
         Pose current_pose = laser_track_->getCurrentPose();
-        SE3 T_odom_sensor = tfTransformToPose(tf_transform).T_w;
+        SE3 T_odom_sensor = tfTransformToPose(tf_transform_segmap).T_w;
         SE3 T_w_sensor = current_pose.T_w;
         SE3 T_w_odom = T_w_sensor * T_odom_sensor.inverse();
 
@@ -282,18 +339,18 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
           params_.sensor_frame,
           scan_stamp);
       tf::transformStampedTFToMsg(tf_transform, ros_transform);
-      
+
       data.push_back(std::make_tuple(scan.time_ns, pc, ros_transform));
     }
   }
-  
+
   std::sort(data.begin(),data.end(),
        [](const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& a,
        const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& b) -> bool
        {
          return std::get<0>(a) <= std::get<0>(b);
        });
-  
+
   bool zero_added = false;
   // Fill response.
   for (const auto& elem : data) {
@@ -308,7 +365,7 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
       } else {
 	continue;
       }
-    } 
+    }
     response.laser_scans.push_back(pc);
     response.transforms.push_back(tf);
   }

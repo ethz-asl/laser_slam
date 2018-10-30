@@ -162,6 +162,7 @@ class LaserSlamWorker {
   pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
 
   tf::StampedTransform world_to_odom_;
+  tf::StampedTransform tf_gt_offset_;
 
   static constexpr double kTimeout_s = 0.2;
   static constexpr unsigned int kScanSubscriberMessageQueueSize = 1u;

@@ -153,6 +153,11 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         process_scan = true;
         last_pose_set_ = true;
         last_pose_ = tfTransformToPose(tf_transform).T_w;
+
+        // HACK gound truth integration
+        tf_listener_.lookupTransform("/world", "/velodyne",
+            cloud_msg_in.header.stamp, tf_gt_offset_);
+        tf_gt_offset_.child_frame_id_ = "/map";
       } else {
         current_pose = tfTransformToPose(tf_transform).T_w;
         float dist_m = distanceBetweenTwoSE3(current_pose, last_pose_);
@@ -161,6 +166,9 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
           last_pose_ = current_pose;
         }
       }
+
+      tf_gt_offset_.stamp_ = tf_transform.stamp_;
+      tf_broadcaster_.sendTransform(tf_gt_offset_);
 
       if (process_scan) {
         // Convert input cloud to laser scan.

@@ -26,13 +26,12 @@ struct LaserSlamWorkerParams {
   double voxel_size_m;
   int minimum_point_number_per_voxel;
 
-
   bool remove_ground_from_local_map = false;
   double ground_distance_to_robot_center_m;
 
   bool use_odometry_information = true;
   bool use_loam = false;
-
+  bool publish_ground_truth;
 
   // Frames.
   std::string odom_frame;
@@ -43,6 +42,7 @@ struct LaserSlamWorkerParams {
   std::string assembled_cloud_sub_topic;
   std::string trajectory_pub_topic;
   std::string odometry_trajectory_pub_topic;
+  std::string ground_truth_trajectory_pub_topic;
   std::string full_map_pub_topic;
   std::string local_map_pub_topic;
   std::string distant_map_pub_topic;
@@ -73,6 +73,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
 
   nh.getParam(ns + "/use_odometry_information", params.use_odometry_information);
   nh.getParam(ns + "/use_loam", params.use_loam);
+  nh.getParam(ns + "/publish_ground_truth", params.publish_ground_truth);
 
   nh.getParam(ns + "/odom_frame", params.odom_frame);
   nh.getParam(ns + "/sensor_frame", params.sensor_frame);
@@ -86,6 +87,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/assembled_cloud_sub_topic", params.assembled_cloud_sub_topic);
   nh.getParam(ns + "/trajectory_pub_topic", params.trajectory_pub_topic);
   nh.getParam(ns + "/odometry_trajectory_pub_topic", params.odometry_trajectory_pub_topic);
+  nh.getParam(ns + "/ground_truth_trajectory_pub_topic", params.ground_truth_trajectory_pub_topic);
   nh.getParam(ns + "/full_map_pub_topic", params.full_map_pub_topic);
   nh.getParam(ns + "/local_map_pub_topic", params.local_map_pub_topic);
   nh.getParam(ns + "/distant_map_pub_topic", params.distant_map_pub_topic);

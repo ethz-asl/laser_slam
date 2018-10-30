@@ -12,7 +12,6 @@
 #include <laser_slam_ros/common.hpp>
 #include <laser_slam_ros/laser_slam_worker.hpp>
 #include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/common/transforms.h>
 #include <pcl/io/pcd_io.h>
@@ -53,6 +52,9 @@ void LaserSlamWorker::init(
   // Setup publishers.
   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
                                                  kPublisherQueueSize, true);
+
+  gt_trajectory_pub_ = nh.advertise<nav_msgs::Path>(
+    "gt_trajectory", kPublisherQueueSize, true);
 
   if (params_.publish_local_map) {
     local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
@@ -158,6 +160,9 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         tf_listener_.lookupTransform("/world", "/velodyne",
             cloud_msg_in.header.stamp, tf_gt_offset_);
         tf_gt_offset_.child_frame_id_ = "/map";
+
+        gt_path_.header.frame_id = "/world";
+        gt_path_.header.stamp = tf_gt_offset_.stamp_;
       } else {
         current_pose = tfTransformToPose(tf_transform).T_w;
         float dist_m = distanceBetweenTwoSE3(current_pose, last_pose_);
@@ -167,8 +172,27 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         }
       }
 
+      // HACK
       tf_gt_offset_.stamp_ = tf_transform.stamp_;
       tf_broadcaster_.sendTransform(tf_gt_offset_);
+
+      tf::StampedTransform tf_gt_pose;
+      tf_listener_.lookupTransform("/world", "/velodyne",
+          cloud_msg_in.header.stamp, tf_gt_pose);
+
+      geometry_msgs::PoseStamped pose_msg;
+      pose_msg.header = gt_path_.header;
+      pose_msg.header.stamp = tf_gt_pose.stamp_;
+      pose_msg.pose.position.x = tf_gt_pose.getOrigin().x();
+      pose_msg.pose.position.y = tf_gt_pose.getOrigin().y();
+      pose_msg.pose.position.z = tf_gt_pose.getOrigin().z();
+      pose_msg.pose.orientation.w = tf_gt_pose.getRotation().w();
+      pose_msg.pose.orientation.x = tf_gt_pose.getRotation().x();
+      pose_msg.pose.orientation.y = tf_gt_pose.getRotation().y();
+      pose_msg.pose.orientation.z = tf_gt_pose.getRotation().z();
+      gt_path_.poses.push_back(pose_msg);
+
+      gt_trajectory_pub_.publish(gt_path_);
 
       if (process_scan) {
         // Convert input cloud to laser scan.

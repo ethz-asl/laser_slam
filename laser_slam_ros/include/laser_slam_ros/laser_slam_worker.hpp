@@ -5,6 +5,7 @@
 
 #include <laser_slam/common.hpp>
 #include <laser_slam/incremental_estimator.hpp>
+#include <nav_msgs/Path.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/point_types.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -119,6 +120,7 @@ class LaserSlamWorker {
 
   // Publishers.
   ros::Publisher trajectory_pub_;
+  ros::Publisher gt_trajectory_pub_;
   ros::Publisher local_map_pub_;
   ros::Publisher registered_scan_pub_;
   //  ros::Publisher odometry_trajectory_pub_;
@@ -162,6 +164,8 @@ class LaserSlamWorker {
   pcl::VoxelGrid<laser_slam_ros::PclPoint> voxel_filter_;
 
   tf::StampedTransform world_to_odom_;
+
+  nav_msgs::Path gt_path_;
   tf::StampedTransform tf_gt_offset_;
 
   static constexpr double kTimeout_s = 0.2;

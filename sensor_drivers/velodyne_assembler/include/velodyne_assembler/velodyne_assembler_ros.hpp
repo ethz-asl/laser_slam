@@ -37,6 +37,9 @@ class VelodyneAssemblerRos {
     /// \brief Retrieve parameters.
     bool getParams();
 
+    /// \brief Converts scans to fixed sensor frame if primal sensor frame is rotating.
+    std::unique_ptr<DataPoints> convertToFixedSensorFrame(const boost::shared_ptr<const sensor_msgs::PointCloud2>& msg);
+
     /// Subscribers.
     ros::Subscriber pcl_sub_;
 
@@ -52,6 +55,8 @@ class VelodyneAssemblerRos {
 
     // Assemble point clouds without IMU and odometry when naive_assembling_ is true.
     bool naive_assembling_;
+    // Indicated that primal sensor frame is rotating, conversion of the incoming scans to fixed frame needed.
+    bool rotating_sensor_frame_;
 
     // Frame ID of the fixed frame (inertial).
     std::string fixed_frame_id_;
@@ -59,6 +64,8 @@ class VelodyneAssemblerRos {
     std::string vehicle_base_frame_id_;
     // Frame ID of the sensor (the point clouds are assumed to be in this frame).
     std::string sensor_frame_id_;
+    // Frame ID of the static sensor (only use if sensor frame 'sensor_frame_id_' is rotating)
+    std::string sensor_fixed_frame_id_;
 
     // Raw/input point cloud.
     std::string raw_pcl_;

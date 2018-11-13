@@ -12,7 +12,7 @@
   <!-- Topic to listen to for velodyne packets. -->
   <arg name="velodyne_topic" default="/velodyne_points"/>
   <!-- Topic to listen to for odometry messages. -->
-  <arg name="odom_topic" default="/odom"/> 
+  <arg name="odom_topic" default="/odom"/>
   <!-- Topic to publish assembled point clouds. -->
   <arg name="output_topic" default="/velodyne_assembled_cloud"/>
 

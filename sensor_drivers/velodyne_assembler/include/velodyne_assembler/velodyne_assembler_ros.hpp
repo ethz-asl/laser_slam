@@ -65,8 +65,8 @@ class VelodyneAssemblerRos {
     // Assembled point cloud.
     std::string assembled_pcl_;
 
-    std::unique_ptr<DataPoints> current_assembled_cloud_;
-    std::unique_ptr<PM::Transformation> transformation_;
+    std::shared_ptr<DataPoints> current_assembled_cloud_;
+    std::shared_ptr<PM::Transformation> transformation_;
 
     float last_azimuth_rad_;
     ros::Time last_stamp_;

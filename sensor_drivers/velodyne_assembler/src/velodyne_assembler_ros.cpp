@@ -65,7 +65,7 @@ void VelodyneAssemblerRos::pclCallback(
   }
 
   // Create the DataPoints object.
-  unique_ptr<DataPoints> cloud_in(new DataPoints(
+  shared_ptr<DataPoints> cloud_in(make_shared<DataPoints>(
       PointMatcher_ros::rosMsgToPointMatcherCloud<float>(*msg)));
 
   // Do nothing if the cloud contains no points.
@@ -119,7 +119,7 @@ void VelodyneAssemblerRos::pclCallback(
             T_sensorPrevious_sensorCurrent;
       }
 
-      current_assembled_cloud_ = unique_ptr<DataPoints>(new DataPoints(*cloud_in));
+      current_assembled_cloud_ = shared_ptr<DataPoints>(make_shared<DataPoints>(*cloud_in));
       initialized_ = true;
 
       T_sensorStart_sensorCurrent_ = PM::TransformationParameters::Identity(4,4);

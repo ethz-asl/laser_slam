@@ -14,6 +14,7 @@
 #include <tf/transform_broadcaster.h>
 
 #include "laser_slam_ros/GetLaserTrackSrv.h"
+#include "laser_slam_ros/ExportTrajectory.h"
 #include "laser_slam_ros/common.hpp"
 
 namespace laser_slam_ros {
@@ -71,11 +72,14 @@ class LaserSlamWorker {
 
   void setLockScanCallback(bool new_state);
 
-  void exportTrajectories() const;
+  void exportTrajectories(const std::string& id);
 
   void exportTrajectoryHead(laser_slam::Time head_duration_ns, const std::string& filename) const;
 
-  bool exportTrajectoryServiceCall(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
+  bool exportTrajectoryServiceCall(laser_slam_ros::ExportTrajectory::Request& req,
+                                   laser_slam_ros::ExportTrajectory::Response& res);
+
+  void addTFtoPath(const tf::StampedTransform &tf_transform, nav_msgs::Path *path);
 
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
@@ -98,6 +102,8 @@ class LaserSlamWorker {
 
   bool getLaserTracksServiceCall(laser_slam_ros::GetLaserTrackSrv::Request& request,
                                  laser_slam_ros::GetLaserTrackSrv::Response& response);
+
+  Eigen::MatrixXd pathMsgToEigen(const nav_msgs::Path& path);
 
  private:
   LaserSlamWorkerParams params_;
@@ -123,7 +129,7 @@ class LaserSlamWorker {
   ros::Publisher gt_trajectory_pub_;
   ros::Publisher local_map_pub_;
   ros::Publisher registered_scan_pub_;
-  //  ros::Publisher odometry_trajectory_pub_;
+  ros::Publisher odometry_trajectory_pub_;
   //  ros::Publisher point_cloud_pub_;
   //  ros::Publisher distant_map_pub_;
   //  ros::Publisher new_fixed_cloud_pub_;
@@ -167,6 +173,7 @@ class LaserSlamWorker {
 
   nav_msgs::Path gt_path_;
   tf::StampedTransform tf_gt_offset_;
+  nav_msgs::Path odom_path_;
 
   static constexpr double kTimeout_s = 0.2;
   static constexpr unsigned int kScanSubscriberMessageQueueSize = 1u;

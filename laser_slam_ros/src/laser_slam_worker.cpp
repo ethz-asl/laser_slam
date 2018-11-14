@@ -53,6 +53,9 @@ void LaserSlamWorker::init(
   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
                                                  kPublisherQueueSize, true);
 
+  odometry_trajectory_pub_ = nh.advertise<nav_msgs::Path>(
+      params_.odometry_trajectory_pub_topic, kPublisherQueueSize, true);
+
   if (params_.publish_ground_truth) {
     gt_trajectory_pub_ = nh.advertise<nav_msgs::Path>(
         params_.ground_truth_trajectory_pub_topic, kPublisherQueueSize, true);
@@ -150,6 +153,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         tf_transform = tf_transform_segmap;
       }
 
+      // See if scan needs to be processed
       bool process_scan = false;
       SE3 current_pose;
 
@@ -158,9 +162,14 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         last_pose_set_ = true;
         last_pose_ = tfTransformToPose(tf_transform).T_w;
 
+        // Initialize publishing of odometry
+        odom_path_.header.frame_id = params_.odom_frame;
+        odom_path_.header.stamp = tf_transform.stamp_;
+
+        // Initialize publishing of ground truth
         if (params_.publish_ground_truth) {
           tf_listener_.lookupTransform("/world", "/velodyne",
-              cloud_msg_in.header.stamp, tf_gt_offset_);
+              ros::Time(0), tf_gt_offset_);
           tf_gt_offset_.child_frame_id_ = "/map";
 
           gt_path_.header.frame_id = "/world";
@@ -175,26 +184,20 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         }
       }
 
+      // Publish odometry
+      addTFtoPath(tf_transform, &odom_path_);
+      odometry_trajectory_pub_.publish(odom_path_);
+
+      // Publish ground truth
       if (params_.publish_ground_truth) {
         tf_gt_offset_.stamp_ = tf_transform.stamp_;
         tf_broadcaster_.sendTransform(tf_gt_offset_);
 
         tf::StampedTransform tf_gt_pose;
         tf_listener_.lookupTransform("/world", "/velodyne",
-            cloud_msg_in.header.stamp, tf_gt_pose);
+            ros::Time(0), tf_gt_pose);
 
-        geometry_msgs::PoseStamped pose_msg;
-        pose_msg.header = gt_path_.header;
-        pose_msg.header.stamp = tf_gt_pose.stamp_;
-        pose_msg.pose.position.x = tf_gt_pose.getOrigin().x();
-        pose_msg.pose.position.y = tf_gt_pose.getOrigin().y();
-        pose_msg.pose.position.z = tf_gt_pose.getOrigin().z();
-        pose_msg.pose.orientation.w = tf_gt_pose.getRotation().w();
-        pose_msg.pose.orientation.x = tf_gt_pose.getRotation().x();
-        pose_msg.pose.orientation.y = tf_gt_pose.getRotation().y();
-        pose_msg.pose.orientation.z = tf_gt_pose.getRotation().z();
-        gt_path_.poses.push_back(pose_msg);
-
+        addTFtoPath(tf_gt_pose, &gt_path_);
         gt_trajectory_pub_.publish(gt_path_);
       }
 
@@ -646,11 +649,29 @@ laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(
   return last_pose * start_pose.inverse();
 }
 
-void LaserSlamWorker::exportTrajectories() const {
+Eigen::MatrixXd LaserSlamWorker::pathMsgToEigen(const nav_msgs::Path& path) {
+  Eigen::MatrixXd matrix;
+  matrix.resize(path.poses.size(), 8);
+  unsigned int i = 0u;
+  for (const auto& pose : path.poses) {
+    matrix(i,0) = rosTimeToCurveTime(pose.header.stamp.toNSec());
+    matrix(i,1) = pose.pose.position.x;
+    matrix(i,2) = pose.pose.position.y;
+    matrix(i,3) = pose.pose.position.z;
+    matrix(i,4) = pose.pose.orientation.x;
+    matrix(i,5) = pose.pose.orientation.y;
+    matrix(i,6) = pose.pose.orientation.z;
+    matrix(i,7) = pose.pose.orientation.w;
+    ++i;
+  }
+  return matrix;
+}
+
+void LaserSlamWorker::exportTrajectories(const std::string& id) {
   Trajectory traj;
   laser_track_->getTrajectory(&traj);
   Eigen::MatrixXd matrix;
-  matrix.resize(traj.size(), 4);
+  matrix.resize(traj.size(), 8);
   unsigned int i = 0u;
   for (const auto& pose : traj) {
     matrix(i,0) = pose.first;
@@ -663,7 +684,12 @@ void LaserSlamWorker::exportTrajectories() const {
     matrix(i,7) = pose.second.getRotation().w();
     ++i;
   }
-  writeEigenMatrixXdCSV(matrix, "/tmp/trajectory_" + std::to_string(worker_id_) + ".csv");
+  writeEigenMatrixXdCSV(matrix, "/home/rdube/.segmap/trajectories/" + id + "_"
+    + std::to_string(worker_id_) + ".csv");
+  writeEigenMatrixXdCSV(pathMsgToEigen(odom_path_), "/home/rdube/.segmap/trajectories/" + id + "_odom_"
+      + std::to_string(worker_id_) + ".csv");
+  writeEigenMatrixXdCSV(pathMsgToEigen(gt_path_), "/home/rdube/.segmap/trajectories/" + id + "_gt_"
+      + std::to_string(worker_id_) + ".csv");
 }
 
 void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
@@ -697,11 +723,25 @@ void LaserSlamWorker::exportTrajectoryHead(laser_slam::Time head_duration_ns,
   LOG(INFO) << "Exported " << i << " trajectory poses to " << filename << ".";
 }
 
-bool LaserSlamWorker::exportTrajectoryServiceCall(std_srvs::Empty::Request& req,
-                                                  std_srvs::Empty::Response& res) {
-  exportTrajectoryHead(laser_track_->getMaxTime(),
-                       "/tmp/online_matcher/trajectory.csv");
+bool LaserSlamWorker::exportTrajectoryServiceCall(ExportTrajectory::Request& req,
+                                                  ExportTrajectory::Response& res) {
+  exportTrajectories(req.id.data);
   return true;
+}
+
+void LaserSlamWorker::addTFtoPath(
+    const tf::StampedTransform &tf_transform, nav_msgs::Path *path) {
+  geometry_msgs::PoseStamped pose_msg;
+  pose_msg.header = path->header;
+  pose_msg.header.stamp = tf_transform.stamp_;
+  pose_msg.pose.position.x = tf_transform.getOrigin().x();
+  pose_msg.pose.position.y = tf_transform.getOrigin().y();
+  pose_msg.pose.position.z = tf_transform.getOrigin().z();
+  pose_msg.pose.orientation.w = tf_transform.getRotation().w();
+  pose_msg.pose.orientation.x = tf_transform.getRotation().x();
+  pose_msg.pose.orientation.y = tf_transform.getRotation().y();
+  pose_msg.pose.orientation.z = tf_transform.getRotation().z();
+  path->poses.push_back(pose_msg);
 }
 
 } // namespace laser_slam_ros

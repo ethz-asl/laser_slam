@@ -171,7 +171,7 @@ class LaserSlamWorker {
 
   tf::StampedTransform world_to_odom_;
 
-  nav_msgs::Path gt_path_;
+  nav_msgs::Path gt_path_, gt_path_eval_;
   tf::StampedTransform tf_gt_offset_;
   nav_msgs::Path odom_path_;
 

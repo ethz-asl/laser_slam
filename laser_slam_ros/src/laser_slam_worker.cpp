@@ -163,7 +163,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         last_pose_ = tfTransformToPose(tf_transform).T_w;
 
         // Initialize publishing of odometry
-        odom_path_.header.frame_id = params_.odom_frame;
+        odom_path_.header.frame_id = "/world";
         odom_path_.header.stamp = tf_transform.stamp_;
 
         // Initialize publishing of ground truth
@@ -174,6 +174,9 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
           gt_path_.header.frame_id = "/world";
           gt_path_.header.stamp = tf_gt_offset_.stamp_;
+
+          gt_path_eval_.header.frame_id = "/world";
+          gt_path_eval_.header.stamp = tf_gt_offset_.stamp_; //should not matter
         }
       } else {
         current_pose = tfTransformToPose(tf_transform).T_w;
@@ -185,7 +188,10 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       }
 
       // Publish odometry
-      addTFtoPath(tf_transform, &odom_path_);
+      tf::StampedTransform composed;
+      composed.setData(tf_gt_offset_ * tf_transform);
+      composed.stamp_ = tf_transform.stamp_;
+      addTFtoPath(composed, &odom_path_);
       odometry_trajectory_pub_.publish(odom_path_);
 
       // Publish ground truth
@@ -199,6 +205,10 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
 
         addTFtoPath(tf_gt_pose, &gt_path_);
         gt_trajectory_pub_.publish(gt_path_);
+
+        tf_listener_.lookupTransform("/world", "/velodyne",
+            cloud_msg_in.header.stamp, tf_gt_pose);
+        addTFtoPath(tf_gt_pose, &gt_path_eval_);
       }
 
       if (process_scan) {
@@ -235,7 +245,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
                                                 &new_factors, &new_values, &is_prior);
         } else {
           Pose new_pose;
-
           Time new_pose_time_ns = tfTransformToPose(tf_transform).time_ns;
 
           if (laser_track_->getNumScans() > 2u) {
@@ -649,11 +658,42 @@ laser_slam::SE3 LaserSlamWorker::getTransformBetweenPoses(
   return last_pose * start_pose.inverse();
 }
 
+Eigen::MatrixXd laserSlamToKittiFormat(const Eigen::MatrixXd& in) {
+  Eigen::Matrix<double, 3, 3> rot_matrix;
+  Eigen::MatrixXd out;
+  out.resize(in.rows(), 12);
+
+  for (unsigned int i = 0u; i < in.rows(); i++) {
+    rot_matrix = laser_slam::SO3(in(i,7), in(i,4),
+      in(i,5), in(i,6)).getRotationMatrix();
+
+      out(i,0) = rot_matrix(0,0);
+      out(i,1) = rot_matrix(0,1);
+      out(i,2) = rot_matrix(0,2);
+      out(i,3) = in(i,1);
+
+      out(i,4) = rot_matrix(1,0);
+      out(i,5) = rot_matrix(1,1);
+      out(i,6) = rot_matrix(1,2);
+      out(i,7) = in(i,2);
+
+      out(i,8) = rot_matrix(2,0);
+      out(i,9) = rot_matrix(2,1);
+      out(i,10) = rot_matrix(2,2);
+      out(i,11) = in(i,3);
+  }
+
+  return out;
+}
+
 Eigen::MatrixXd LaserSlamWorker::pathMsgToEigen(const nav_msgs::Path& path) {
   Eigen::MatrixXd matrix;
+
   matrix.resize(path.poses.size(), 8);
   unsigned int i = 0u;
   for (const auto& pose : path.poses) {
+    laser_slam::SO3 rot(pose.pose.orientation.w, pose.pose.orientation.x,
+                        pose.pose.orientation.y, pose.pose.orientation.z);
     matrix(i,0) = rosTimeToCurveTime(pose.header.stamp.toNSec());
     matrix(i,1) = pose.pose.position.x;
     matrix(i,2) = pose.pose.position.y;
@@ -684,11 +724,11 @@ void LaserSlamWorker::exportTrajectories(const std::string& id) {
     matrix(i,7) = pose.second.getRotation().w();
     ++i;
   }
-  writeEigenMatrixXdCSV(matrix, "/home/rdube/.segmap/trajectories/" + id + "_"
+  writeEigenMatrixXdCSV(laserSlamToKittiFormat(matrix), "/home/rdube/.segmap/trajectories/" + id + "_"
     + std::to_string(worker_id_) + ".csv");
-  writeEigenMatrixXdCSV(pathMsgToEigen(odom_path_), "/home/rdube/.segmap/trajectories/" + id + "_odom_"
+  writeEigenMatrixXdCSV(laserSlamToKittiFormat(pathMsgToEigen(odom_path_)), "/home/rdube/.segmap/trajectories/" + id + "_odom_"
       + std::to_string(worker_id_) + ".csv");
-  writeEigenMatrixXdCSV(pathMsgToEigen(gt_path_), "/home/rdube/.segmap/trajectories/" + id + "_gt_"
+  writeEigenMatrixXdCSV(laserSlamToKittiFormat(pathMsgToEigen(gt_path_eval_)), "/home/rdube/.segmap/trajectories/" + id + "_gt_"
       + std::to_string(worker_id_) + ".csv");
 }
 

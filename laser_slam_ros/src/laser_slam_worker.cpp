@@ -169,7 +169,7 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         // Initialize publishing of ground truth
         if (params_.publish_ground_truth) {
           tf_listener_.lookupTransform("/world", "/velodyne",
-              ros::Time(0), tf_gt_offset_);
+              cloud_msg_in.header.stamp, tf_gt_offset_);
           tf_gt_offset_.child_frame_id_ = "/map";
 
           gt_path_.header.frame_id = "/world";
@@ -714,14 +714,15 @@ void LaserSlamWorker::exportTrajectories(const std::string& id) {
   matrix.resize(traj.size(), 8);
   unsigned int i = 0u;
   for (const auto& pose : traj) {
+    SE3 pose_in_world = tfTransformToPose(tf_gt_offset_).T_w * pose.second;
     matrix(i,0) = pose.first;
-    matrix(i,1) = pose.second.getPosition()(0);
-    matrix(i,2) = pose.second.getPosition()(1);
-    matrix(i,3) = pose.second.getPosition()(2);
-    matrix(i,4) = pose.second.getRotation().x();
-    matrix(i,5) = pose.second.getRotation().y();
-    matrix(i,6) = pose.second.getRotation().z();
-    matrix(i,7) = pose.second.getRotation().w();
+    matrix(i,1) = pose_in_world.getPosition()(0);
+    matrix(i,2) = pose_in_world.getPosition()(1);
+    matrix(i,3) = pose_in_world.getPosition()(2);
+    matrix(i,4) = pose_in_world.getRotation().x();
+    matrix(i,5) = pose_in_world.getRotation().y();
+    matrix(i,6) = pose_in_world.getRotation().z();
+    matrix(i,7) = pose_in_world.getRotation().w();
     ++i;
   }
   writeEigenMatrixXdCSV(laserSlamToKittiFormat(matrix), "/home/rdube/.segmap/trajectories/" + id + "_"

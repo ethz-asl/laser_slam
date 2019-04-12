@@ -137,7 +137,7 @@ static void correctTransformationMatrix(
     PointMatcher::TransformationParameters* transformation_matrix) {
   CHECK_NOTNULL(transformation_matrix);
 
-  PointMatcher::Transformation* rigid_transformation =
+   std::shared_ptr<PointMatcher::Transformation>  rigid_transformation =
       PointMatcher::get().REG(Transformation).create("RigidTransformation");
   CHECK_NOTNULL(rigid_transformation);
 

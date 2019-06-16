@@ -220,7 +220,7 @@ class LaserTrack {
   PointMatcher::DataPointsFilters input_filters_;
 
   // Libpointmatcher rigid transformation.
-  PointMatcher::Transformation* rigid_transformation_;
+  std::shared_ptr<PointMatcher::Transformation> rigid_transformation_;
 
   // Noise models.
   gtsam::noiseModel::Base::shared_ptr prior_noise_model_;

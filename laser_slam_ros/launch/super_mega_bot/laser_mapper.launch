@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<launch>
+    <!-- ICP configuration file -->
+    <arg name="icp_configuration_file"
+         default="$(find laser_slam_ros)/launch/super_mega_bot/icp_dynamic_outdoor.yaml"/>
+    <!-- Input filters file -->
+    <arg name="icp_input_filters_file"
+         default="$(find laser_slam_ros)/launch/super_mega_bot/input_filters_outdoor.yaml"/>
+
+    <!-- laser_mapper node -->
+    <node name="laser_mapper" pkg="laser_slam_ros" type="laser_mapper_node"
+          output="screen" respawn="false">
+        <param name="icp_configuration_file" value="$(arg icp_configuration_file)"/>
+        <param name="icp_input_filters_file" value="$(arg icp_input_filters_file)"/>
+    </node>
+
+</launch>

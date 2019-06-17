@@ -18,7 +18,11 @@ catkin_simple(ALL_DEPS_REQUIRED)
 
 cs_add_library(${PROJECT_NAME} 
     src/laser_slam_worker.cpp
+    src/laser_mapper.cpp
 )
+
+cs_add_executable(laser_mapper_node src/laser_mapper_node.cpp)
+target_link_libraries(laser_mapper_node ${PROJECT_NAME})
 
 cs_install()
 cs_export()

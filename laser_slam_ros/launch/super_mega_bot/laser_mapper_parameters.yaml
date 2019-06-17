@@ -1,0 +1,49 @@
+LaserMapper: {
+  number_of_robots: 1,
+  robot_prefix: "na",
+
+  world_frame: "map",
+  tf_publication_rate_hz: 10,
+
+  LaserSlamWorker: {
+    use_odometry_information: true,
+
+    odom_frame: "world",
+    sensor_frame: "lidar",
+
+    assembled_cloud_sub_topic: "/velodyne_points",
+    trajectory_pub_topic: "trajectory",
+    odometry_trajectory_pub_topic: "odometry_trajectory",
+    full_map_pub_topic: "full_map",
+    local_map_pub_topic: "local_map",
+    distant_map_pub_topic: "distant_map",
+
+    create_filtered_map: true,
+    publish_local_map: true,
+    publish_distant_map: false,
+    publish_full_map: false,
+    map_publication_rate_hz: 3,
+  },
+
+  OnlineEstimator: {
+    loop_closure_noise_model: [0.0005, 0.0005, 0.0005, 0.00015, 0.00015, 0.00015],
+    add_m_estimator_on_loop_closures: true,
+
+    do_icp_step_on_loop_closures: false,
+    loop_closures_sub_maps_radius: 3,
+
+    LaserTrack: {
+      odometry_noise_model: [0.5, 0.5, 0.5, 0.015, 0.015, 0.015],
+      icp_noise_model: [0.5, 0.05, 0.05, 0.015, 0.015, 0.015],
+      add_m_estimator_on_odom: false,
+      add_m_estimator_on_icp: false,
+
+      use_icp_factors: false,
+      use_odom_factors: true,
+      nscan_to_match: 3,
+      nscan_in_sub_map: 5,
+      save_icp_results: false,
+      force_priors: false
+    }
+  },
+}

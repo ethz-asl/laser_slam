@@ -31,7 +31,10 @@ class LaserSlamWorker {
 
   /// \brief Publish the robot trajectory (as path) in ROS.
   void publishTrajectory(const laser_slam::Trajectory& trajectory,
-                         const ros::Publisher& publisher) const;
+                         const ros::Publisher &publisher) const;
+
+  /// \brief Publish the robot pose in ROS.
+  void publishPose(const laser_slam::Pose &pose) const;
 
   /// \brief Publish the map.
   void publishMap();
@@ -119,10 +122,7 @@ class LaserSlamWorker {
   // Publishers.
   ros::Publisher trajectory_pub_;
   ros::Publisher local_map_pub_;
-  //  ros::Publisher odometry_trajectory_pub_;
-  //  ros::Publisher point_cloud_pub_;
-  //  ros::Publisher distant_map_pub_;
-  //  ros::Publisher new_fixed_cloud_pub_;
+  ros::Publisher pose_pub_;
 
   // Services.
   ros::ServiceServer get_laser_track_srv_;

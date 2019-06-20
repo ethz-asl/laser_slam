@@ -11,6 +11,7 @@
 #include <laser_slam/common.hpp>
 #include <laser_slam_ros/common.hpp>
 #include <laser_slam_ros/laser_slam_worker.hpp>
+#include <minkindr_conversions/kindr_msg.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -53,6 +54,10 @@ void LaserSlamWorker::init(
   // Setup publishers.
   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
                                                  kPublisherQueueSize, true);
+
+  pose_pub_ = nh.advertise<geometry_msgs::TransformStamped>("/icp_pose",
+      kPublisherQueueSize,
+                                                           true);
 
   if (params_.publish_local_map) {
     local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
@@ -178,6 +183,11 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         SE3 T_w_sensor = current_pose.T_w;
         SE3 T_w_odom = T_w_sensor * T_odom_sensor.inverse();
 
+        Pose pub_pose = current_pose;
+        pub_pose.time_ns = new_scan.time_ns;
+        pub_pose.T_w = T_w_sensor;
+        publishPose(pub_pose);
+
         Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> matrix;
 
         // TODO resize needed?
@@ -195,26 +205,6 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         // Get the last cloud in world frame.
         DataPoints new_fixed_cloud;
         laser_track_->getLocalCloudInWorldFrame(laser_track_->getMaxTime(), &new_fixed_cloud);
-
-        // Transform the cloud in sensor frame
-        //TODO(Renaud) move to a transformPointCloud() fct.
-        //      laser_slam::PointMatcher::TransformationParameters transformation_matrix =
-        //          T_w_sensor.inverse().getTransformationMatrix().cast<float>();
-        //
-        //      laser_slam::correctTransformationMatrix(&transformation_matrix);
-        //
-        //      laser_slam::PointMatcher::Transformation* rigid_transformation =
-        //          laser_slam::PointMatcher::get().REG(Transformation).create("RigidTransformation");
-        //      CHECK_NOTNULL(rigid_transformation);
-        //
-        //      laser_slam::PointMatcher::DataPoints fixed_cloud_in_sensor_frame =
-        //          rigid_transformation->compute(new_fixed_cloud,transformation_matrix);
-        //
-        //
-        //      new_fixed_cloud_pub_.publish(
-        //          PointMatcher_ros::pointMatcherCloudToRosMsg<float>(fixed_cloud_in_sensor_frame,
-        //                                                             params_.sensor_frame,
-        //                                                             cloud_msg_in.header.stamp));
 
         PointCloud new_fixed_cloud_pcl = lpmToPcl(new_fixed_cloud);
 
@@ -246,8 +236,13 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
         }
       }
     } else {
-      ROS_WARN_STREAM("[SegMapper] Timeout while waiting between " + params_.odom_frame  +
+      ROS_WARN_STREAM("[LaserMapper] Timeout while waiting between " + params_
+      .odom_frame  +
                       " and " + params_.sensor_frame  + ".");
+      Pose pose;
+      pose.T_w = SE3(SE3::Position(0,0,0), SE3::Rotation(1,0,0,0));
+      pose.time_ns = rosTimeToCurveTime(cloud_msg_in.header.stamp.toNSec());
+      publishPose(pose);
     }
   }
 }
@@ -301,7 +296,6 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
     sensor_msgs::PointCloud2 pc;
     geometry_msgs::TransformStamped tf;
     std::tie(time, pc, tf) = elem;
-    LOG(INFO) << "Time " << time;
     if (time == 0u) {
       if (!zero_added) {
 	zero_added = true;
@@ -341,6 +335,17 @@ void LaserSlamWorker::publishTrajectory(const Trajectory& trajectory,
   publisher.publish(traj_msg);
 }
 
+void LaserSlamWorker::publishPose(const Pose &pose) const {
+  geometry_msgs::TransformStamped msg;
+  tf::transformKindrToMsg(pose.T_w, &msg.transform);
+  ros::Time t;
+  t.fromNSec(curveTimeToRosTime(pose.time_ns));
+  msg.header.stamp = ros::Time(t);
+  msg.header.frame_id = "map";
+  msg.child_frame_id = "lidar";
+  pose_pub_.publish(msg);
+}
+
 void LaserSlamWorker::publishMap() {
   // TODO make thread safe.
   if (local_map_.size() > 0) {
@@ -361,11 +366,6 @@ void LaserSlamWorker::publishMap() {
       }
       local_map_pub_.publish(msg);
     }
-    //    if (params_.publish_distant_map) {
-    //      sensor_msgs::PointCloud2 msg;
-    //      convert_to_point_cloud_2_msg(distant_map_, params_.world_frame, &msg);
-    //      distant_map_pub_.publish(msg);
-    //    }
   }
 }
 
@@ -448,9 +448,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
     // need to be filtered only once) and for any other processing which needs to be done only
     // when a map is distant from robot and can be assumed as static (until loop closure).
 
-    // TODO(renaud) Is there a way to separate the cloud without having to transform in sensor
-    // frame by setting the position to compute distance from?
-    // Transform local_map_ in sensor frame.
     clock.start();
 
     // Save before removing points.
@@ -478,10 +475,6 @@ void LaserSlamWorker::getFilteredMap(PointCloud* filtered_map) {
     *filtered_map += distant_map_;
 
     clock.takeTime();
-    // LOG(INFO) << "new_local_map.size() " << local_map.size();
-    // LOG(INFO) << "new_distant_map.size() " << new_distant_map.size();
-    // LOG(INFO) << "distant_map_.size() " << distant_map_.size();
-    // LOG(INFO) << "Separating done! Took " << clock.getRealTime() << " ms.";
   } else {
     *filtered_map = local_map;
   }

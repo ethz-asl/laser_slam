@@ -282,18 +282,18 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
           params_.sensor_frame,
           scan_stamp);
       tf::transformStampedTFToMsg(tf_transform, ros_transform);
-      
+
       data.push_back(std::make_tuple(scan.time_ns, pc, ros_transform));
     }
   }
-  
+
   std::sort(data.begin(),data.end(),
        [](const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& a,
        const std::tuple<laser_slam::Time, sensor_msgs::PointCloud2, geometry_msgs::TransformStamped>& b) -> bool
        {
          return std::get<0>(a) <= std::get<0>(b);
        });
-  
+
   bool zero_added = false;
   // Fill response.
   for (const auto& elem : data) {
@@ -308,7 +308,7 @@ bool LaserSlamWorker::getLaserTracksServiceCall(
       } else {
 	continue;
       }
-    } 
+    }
     response.laser_scans.push_back(pc);
     response.transforms.push_back(tf);
   }

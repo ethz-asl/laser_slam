@@ -153,7 +153,7 @@ Values IncrementalEstimator::estimate(const gtsam::NonlinearFactorGraph& new_fac
                                       laser_slam::Time timestamp_ns) {
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
   // Update and force relinearization.
-  isam2_.update(new_factors, new_values).print();
+  isam2_.update(new_factors, new_values);
   // TODO Investigate why these two subsequent update calls are needed.
   isam2_.update();
   isam2_.update();
@@ -171,10 +171,10 @@ Values IncrementalEstimator::estimateAndRemove(
   std::lock_guard<std::recursive_mutex> lock(full_class_mutex_);
 
   CHECK_EQ(affected_worker_ids.size(), 2u);
-  
+
   // Find and update the factor indices to remove.
   std::vector<size_t> factor_indices_to_remove;
-  
+
   std::string linked_workers_print = "";
   for (size_t i = 0u; i < linked_workers_.size(); ++i) {
       linked_workers_print += "Group " + std::to_string(i) + ": ";
@@ -183,7 +183,7 @@ Values IncrementalEstimator::estimateAndRemove(
       }
   }
   LOG(INFO) << "linked_workers before " << linked_workers_print;
-  
+
   // No factor to remove if the ids are the same.
   const unsigned int first_worker_id = affected_worker_ids.at(0u);
   const unsigned int second_worker_id = affected_worker_ids.at(1u);
@@ -210,9 +210,9 @@ Values IncrementalEstimator::estimateAndRemove(
       }
 
       if (!workers_are_already_linked) {
-          // Check which group should be removed (if one contains ID 0 it should be kept). 
+          // Check which group should be removed (if one contains ID 0 it should be kept).
           std::vector<std::vector<unsigned int> >::iterator it_group_to_keep, it_group_to_remove;
-          if (std::find(it_first_worker_group->begin(), it_first_worker_group->end(), 0u) 
+          if (std::find(it_first_worker_group->begin(), it_first_worker_group->end(), 0u)
                     != it_first_worker_group->end()) {
               it_group_to_keep = it_first_worker_group;
               it_group_to_remove = it_second_worker_group;
@@ -228,7 +228,7 @@ Values IncrementalEstimator::estimateAndRemove(
                   worker_id_being_removed = worker_id;
               }
               it_group_to_keep->push_back(worker_id);
-              
+
           }
           CHECK_EQ(factor_indices_to_remove.size(), 1u);
 
@@ -236,11 +236,11 @@ Values IncrementalEstimator::estimateAndRemove(
           linked_workers_.erase(it_group_to_remove);
       }
   }
-  
+
   if (!factor_indices_to_remove.empty()) {
       LOG(INFO) << "Removing prior on worker id " << worker_id_being_removed;
   }
-  
+
   linked_workers_print = "";
   for (size_t i = 0u; i < linked_workers_.size(); ++i) {
       linked_workers_print += "Group " + std::to_string(i) + ": ";
@@ -279,7 +279,7 @@ gtsam::Values IncrementalEstimator::registerPrior(const gtsam::NonlinearFactorGr
   std::vector<unsigned int> new_linked_worker;
   new_linked_worker.push_back(worker_id);
   linked_workers_.push_back(new_linked_worker);
-  
+
   // Each call to iSAM2 update(*) performs one iteration of the iterative nonlinear solver.
   // If accuracy is desired at the expense of time, update(*) can be called additional times
   // to perform multiple optimizer iterations every step.

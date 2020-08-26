@@ -168,14 +168,10 @@ static PointCloud lpmToPcl(const laser_slam::PointMatcher::DataPoints& cloud_in)
 
     if (cloud_in.descriptorExists("color")) {
       uint8_t color_starting_row = cloud_in.getDescriptorStartingRow("color");
-      std::cout << cloud_in.getDescriptorDimension("color");
-      uint8_t r = cloud_in.descriptors(color_starting_row, i) * 255;
-      uint8_t g = cloud_in.descriptors(color_starting_row + 1, i) * 255;
-      uint8_t b = cloud_in.descriptors(color_starting_row + 2, i) * 255;
-      uint8_t a = cloud_in.descriptors(color_starting_row + 3, i) * 255;
-
-      uint32_t rgba = ((uint32_t)r << 24 | (uint32_t)g << 16 | (uint32_t)b << 8 | (uint32_t)a);
-      point.rgba = rgba;
+      point.r = cloud_in.descriptors(color_starting_row, i) * 255;
+      point.g = cloud_in.descriptors(color_starting_row + 1, i) * 255;
+      point.b = cloud_in.descriptors(color_starting_row + 2, i) * 255;
+      point.a = cloud_in.descriptors(color_starting_row + 3, i) * 255;
     }
 
     cloud_out.push_back(point);

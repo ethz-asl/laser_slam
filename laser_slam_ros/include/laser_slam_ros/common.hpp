@@ -10,7 +10,7 @@
 
 namespace laser_slam_ros {
 
-typedef pcl::PointXYZ PclPoint;
+typedef pcl::PointXYZRGBA PclPoint;
 typedef pcl::PointCloud<PclPoint> PointCloud;
 typedef PointCloud::Ptr PointCloudPtr;
 typedef pcl::PointXYZI PointI;
@@ -165,6 +165,19 @@ static PointCloud lpmToPcl(const laser_slam::PointMatcher::DataPoints& cloud_in)
     point.x = cloud_in.features(0,i);
     point.y = cloud_in.features(1,i);
     point.z = cloud_in.features(2,i);
+
+    if (cloud_in.descriptorExists("color")) {
+      uint8_t color_starting_row = cloud_in.getDescriptorStartingRow("color");
+      std::cout << cloud_in.getDescriptorDimension("color");
+      uint8_t r = cloud_in.descriptors(color_starting_row, i) * 255;
+      uint8_t g = cloud_in.descriptors(color_starting_row + 1, i) * 255;
+      uint8_t b = cloud_in.descriptors(color_starting_row + 2, i) * 255;
+      uint8_t a = cloud_in.descriptors(color_starting_row + 3, i) * 255;
+
+      uint32_t rgba = ((uint32_t)r << 24 | (uint32_t)g << 16 | (uint32_t)b << 8 | (uint32_t)a);
+      point.rgba = rgba;
+    }
+
     cloud_out.push_back(point);
   }
   return cloud_out;

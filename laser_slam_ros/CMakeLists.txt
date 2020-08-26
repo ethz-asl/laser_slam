@@ -16,10 +16,9 @@ find_package(catkin_simple 0.1.0 REQUIRED COMPONENTS
 
 catkin_simple(ALL_DEPS_REQUIRED)
 
-cs_add_library(${PROJECT_NAME} 
+cs_add_library(${PROJECT_NAME}
     src/laser_slam_worker.cpp
 )
 
 cs_install()
 cs_export()
-

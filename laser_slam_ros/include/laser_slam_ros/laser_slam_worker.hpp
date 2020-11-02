@@ -10,9 +10,12 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <std_srvs/Empty.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
 
 #include "laser_slam_ros/GetLaserTrackSrv.h"
 #include "laser_slam_ros/common.hpp"
+
+#include <random>
 
 namespace laser_slam_ros {
 
@@ -75,6 +78,8 @@ class LaserSlamWorker {
 
   bool exportTrajectoryServiceCall(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
 
+  bool exportDriftServiceCall(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
+
  private:
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);
@@ -96,6 +101,23 @@ class LaserSlamWorker {
 
   bool getLaserTracksServiceCall(laser_slam_ros::GetLaserTrackSrv::Request& request,
                                  laser_slam_ros::GetLaserTrackSrv::Response& response);
+
+  //###############ODOMETRY NOISER##########################
+  bool enable_drift_ = false;
+  tf::Transform T_W_BLast_;
+  tf::Transform T_W_BdLast_;
+  tf::TransformBroadcaster br_;
+  std::vector<tf::StampedTransform> T_B_Bd_vec;
+
+  float noise_x_mean_, noise_y_mean_, noise_z_mean_, noise_yaw_mean_, noise_attitude_mean_;
+  float noise_x_stddev_, noise_y_stddev_, noise_z_stddev_, noise_yaw_stddev_, noise_attitude_stddev_;
+  std::default_random_engine generator_;
+  std::normal_distribution<float> dist_x_;
+  std::normal_distribution<float> dist_y_;
+  std::normal_distribution<float> dist_z_;
+  std::normal_distribution<float> dist_yaw_;
+  std::normal_distribution<float> dist_att_;
+  //########################################################
 
  private:
   LaserSlamWorkerParams params_;
@@ -127,6 +149,7 @@ class LaserSlamWorker {
   // Services.
   ros::ServiceServer get_laser_track_srv_;
   ros::ServiceServer export_trajectory_srv_;
+  ros::ServiceServer export_drift_srv_;
 
   tf::TransformListener tf_listener_;
 

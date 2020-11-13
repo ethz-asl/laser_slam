@@ -128,7 +128,7 @@ class LaserSlamWorker {
   ros::ServiceServer get_laser_track_srv_;
   ros::ServiceServer export_trajectory_srv_;
 
-  tf::TransformListener tf_listener_;
+  tf::TransformListener *tf_listener_;
 
   // Pointer to the incremental estimator.
   std::shared_ptr<laser_slam::IncrementalEstimator> incremental_estimator_;
@@ -160,8 +160,9 @@ class LaserSlamWorker {
 
   tf::StampedTransform world_to_odom_;
 
-  static constexpr double kTimeout_s = 0.2;
-  static constexpr unsigned int kScanSubscriberMessageQueueSize = 1u;
+  static constexpr double kTimeout_s = 1.0;
+  static constexpr unsigned int kScanSubscriberMessageQueueSize = 8192u;
+  static constexpr unsigned int kTFSubscriberBufferSize_s = 86400u;
   static constexpr unsigned int kPublisherQueueSize = 50u;
 }; // LaserSlamWorker
 

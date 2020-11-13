@@ -69,7 +69,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/distance_to_consider_fixed", params.distance_to_consider_fixed);
   nh.getParam(ns + "/separate_distant_map", params.separate_distant_map);
   nh.getParam(ns + "/create_filtered_map", params.create_filtered_map);
-  nh.getParam(ns + "/minimum_distance_to_add_pose", params.minimum_distance_to_add_pose);
+  nh.param(ns + "/minimum_distance_to_add_pose", params.minimum_distance_to_add_pose, -1.0);
   nh.getParam(ns + "/voxel_size_m", params.voxel_size_m);
   nh.getParam(ns + "/minimum_point_number_per_voxel", params.minimum_point_number_per_voxel);
 

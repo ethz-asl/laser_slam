@@ -56,6 +56,23 @@ void LaserSlamWorker::init(
   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
                                                  kPublisherQueueSize, true);
 
+  // Odometry noiser
+  enable_drift_ = params.enable_drift;
+  if (enable_drift_) {
+    T_W_BdLast_.setIdentity();
+    T_W_BLast_.setIdentity();
+    dist_x_.param(std::normal_distribution<float>::param_type(
+        params_.noise_x_mean, params_.noise_x_stddev));
+    dist_y_.param(std::normal_distribution<float>::param_type(
+        params_.noise_y_mean, params_.noise_y_stddev));
+    dist_z_.param(std::normal_distribution<float>::param_type(
+        params_.noise_z_mean, params_.noise_z_stddev));
+    dist_yaw_.param(std::normal_distribution<float>::param_type(
+        params_.noise_yaw_mean, params_.noise_yaw_stddev));
+    dist_att_.param(std::normal_distribution<float>::param_type(
+        params_.noise_att_mean, params_.noise_att_stddev));
+  }
+
   if (params_.publish_local_map) {
     local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
                                                             kPublisherQueueSize);
@@ -96,7 +113,46 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
     // Get the tf transform.
     tf::StampedTransform tf_transform;
     tf_listener_->lookupTransform(params_.odom_frame, params_.sensor_frame,
-                                 cloud_msg_in.header.stamp, tf_transform);
+        cloud_msg_in.header.stamp, tf_transform);
+
+    // Add drift
+    // B = Sensor frame. Bd = Drifted sensor frame. W = Odom frame.
+    if(enable_drift_) {
+      tf::Transform T_W_B = tf_transform;
+
+      // Compute odometry since last update T_BLast_B.
+      tf::Transform T_BLast_B = (T_W_BLast_.inverse()) * T_W_B;
+      tf::Vector3 transl_gt = T_BLast_B.getOrigin();
+      tf::Quaternion quat_gt = T_BLast_B.getRotation();
+
+      // Add noise in local frame. T_BdLast_Bd = adddNoise(T_BLast_B)
+      float noise_x = dist_x_(generator_);
+      float noise_y = dist_y_(generator_);
+      float noise_z = dist_z_(generator_);
+      float noise_yaw = dist_yaw_(generator_);
+      float noise_roll = dist_att_(generator_);
+      float noise_pitch = dist_att_(generator_);
+      tf::Quaternion quat_noise;
+      quat_noise.setRPY(noise_roll, noise_pitch, noise_yaw);
+
+      transl_gt.setX(noise_x + T_BLast_B.getOrigin().x());
+      transl_gt.setY(noise_y + T_BLast_B.getOrigin().y());
+      transl_gt.setZ(noise_z + T_BLast_B.getOrigin().z());
+      tf::Transform T_BdLast_Bd = T_BLast_B;
+      T_BdLast_Bd.setOrigin(transl_gt); // Add translation drift.
+      T_BdLast_Bd.setRotation(quat_gt * quat_noise);  // Add rotation drift.
+
+      // Compute drifted sensor frame T_W_Bd.
+      tf::Transform T_W_Bd = T_W_BdLast_ * T_BdLast_Bd;
+      tf_transform.setData(T_W_Bd);
+
+      // Store values for next iteration.
+      T_W_BdLast_ = T_W_Bd;
+      T_W_BLast_ = T_W_B;
+    } else {
+      T_W_BLast_ = tf_transform;
+      T_W_BdLast_ = tf_transform;
+    }
 
     bool process_scan = false;
     SE3 current_pose;
@@ -348,7 +404,16 @@ void LaserSlamWorker::publishTrajectories() {
   if (trajectory.size() > 0u) publishTrajectory(trajectory, trajectory_pub_);
 }
 
-// TODO can we move?
+SE3 LaserSlamWorker::tfTransformToSE3(const tf::Transform& tf_transform) {
+  SE3::Position pos(tf_transform.getOrigin().getX(), tf_transform.getOrigin().getY(),
+                    tf_transform.getOrigin().getZ());
+  SE3::Rotation::Implementation rot(tf_transform.getRotation().getW(),
+                                    tf_transform.getRotation().getX(),
+                                    tf_transform.getRotation().getY(),
+                                    tf_transform.getRotation().getZ());
+  return SE3(pos, rot);
+}
+
 Pose LaserSlamWorker::tfTransformToPose(const tf::StampedTransform& tf_transform) {
   // Register new pose.
   Pose pose;

@@ -52,6 +52,11 @@ struct LaserSlamWorkerParams {
   bool publish_full_map;
   bool publish_distant_map;
   double map_publication_rate_hz;
+
+  // Odometry noiser
+  bool enable_drift;
+  float noise_x_mean, noise_y_mean, noise_z_mean, noise_yaw_mean, noise_att_mean;
+  float noise_x_stddev, noise_y_stddev, noise_z_stddev, noise_yaw_stddev, noise_att_stddev;
 }; // struct LaserSlamWorkerParams
 
 static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
@@ -88,6 +93,20 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/local_map_pub_topic", params.local_map_pub_topic);
   nh.getParam(ns + "/distant_map_pub_topic", params.distant_map_pub_topic);
   nh.getParam(ns + "/get_laser_track_srv_topic", params.get_laser_track_srv_topic);
+
+  //#####ODOMETRY NOISER###############
+  nh.param(ns + "/enable_drift", params.enable_drift, false);
+  nh.getParam(ns + "/noise_x_mean", params.noise_x_mean);
+  nh.getParam(ns + "/noise_y_mean", params.noise_y_mean);
+  nh.getParam(ns + "/noise_z_mean", params.noise_z_mean);
+  nh.getParam(ns + "/noise_yaw_mean", params.noise_yaw_mean);
+  nh.getParam(ns + "/noise_att_mean", params.noise_att_mean);
+  nh.getParam(ns + "/noise_x_stddev", params.noise_x_stddev);
+  nh.getParam(ns + "/noise_y_stddev", params.noise_y_stddev);
+  nh.getParam(ns + "/noise_z_stddev", params.noise_z_stddev);
+  nh.getParam(ns + "/noise_yaw_stddev", params.noise_yaw_stddev);
+  nh.getParam(ns + "/noise_att_stddev", params.noise_att_stddev);
+  //###################################
 
   return params;
 }

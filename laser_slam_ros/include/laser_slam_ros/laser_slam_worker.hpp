@@ -80,7 +80,13 @@ class LaserSlamWorker {
 
   bool exportDriftServiceCall(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
 
+  laser_slam::SE3 getGrountTruthPose() {
+    return tfTransformToSE3(T_W_BLast_);
+  }
+
  private:
+  // Convert a tf::Transform to a laser_slam::SE3.
+  laser_slam::SE3 tfTransformToSE3(const tf::Transform& tf_transform);
   // Convert a tf::StampedTransform to a laser_slam::Pose.
   laser_slam::Pose tfTransformToPose(const tf::StampedTransform& tf_transform);
   // TODO: common.hpp?
@@ -102,24 +108,18 @@ class LaserSlamWorker {
   bool getLaserTracksServiceCall(laser_slam_ros::GetLaserTrackSrv::Request& request,
                                  laser_slam_ros::GetLaserTrackSrv::Response& response);
 
-  //###############ODOMETRY NOISER##########################
+  // Odometry noiser
   bool enable_drift_ = false;
   tf::Transform T_W_BLast_;
   tf::Transform T_W_BdLast_;
-  tf::TransformBroadcaster br_;
-  std::vector<tf::StampedTransform> T_B_Bd_vec;
 
-  float noise_x_mean_, noise_y_mean_, noise_z_mean_, noise_yaw_mean_, noise_attitude_mean_;
-  float noise_x_stddev_, noise_y_stddev_, noise_z_stddev_, noise_yaw_stddev_, noise_attitude_stddev_;
   std::default_random_engine generator_;
   std::normal_distribution<float> dist_x_;
   std::normal_distribution<float> dist_y_;
   std::normal_distribution<float> dist_z_;
   std::normal_distribution<float> dist_yaw_;
   std::normal_distribution<float> dist_att_;
-  //########################################################
 
- private:
   LaserSlamWorkerParams params_;
 
   unsigned int worker_id_;

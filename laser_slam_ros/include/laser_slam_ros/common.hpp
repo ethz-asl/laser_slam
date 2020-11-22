@@ -53,12 +53,10 @@ struct LaserSlamWorkerParams {
   bool publish_distant_map;
   double map_publication_rate_hz;
 
-  //#####ODOMETRY NOISER###############
+  // Odometry noiser
   bool enable_drift;
-  std::string sensor_drifted_frame;
   float noise_x_mean, noise_y_mean, noise_z_mean, noise_yaw_mean, noise_att_mean;
   float noise_x_stddev, noise_y_stddev, noise_z_stddev, noise_yaw_stddev, noise_att_stddev;
-  //###################################
 }; // struct LaserSlamWorkerParams
 
 static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
@@ -97,8 +95,7 @@ static LaserSlamWorkerParams getLaserSlamWorkerParams(const ros::NodeHandle& nh,
   nh.getParam(ns + "/get_laser_track_srv_topic", params.get_laser_track_srv_topic);
 
   //#####ODOMETRY NOISER###############
-  nh.getParam(ns + "/enable_drift", params.enable_drift);
-  nh.getParam(ns + "/sensor_drifted_frame", params.sensor_drifted_frame);
+  nh.param(ns + "/enable_drift", params.enable_drift, false);
   nh.getParam(ns + "/noise_x_mean", params.noise_x_mean);
   nh.getParam(ns + "/noise_y_mean", params.noise_y_mean);
   nh.getParam(ns + "/noise_z_mean", params.noise_z_mean);

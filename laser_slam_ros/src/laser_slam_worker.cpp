@@ -56,17 +56,22 @@ void LaserSlamWorker::init(
   trajectory_pub_ = nh.advertise<nav_msgs::Path>(params_.trajectory_pub_topic,
                                                  kPublisherQueueSize, true);
 
-  //################### ODOMETRY NOISER###################
-  T_W_BdLast_.setIdentity();
-  T_W_BLast_.setIdentity();
-  T_B_Bd_vec.clear();
+  // Odometry noiser
   enable_drift_ = params.enable_drift;
-  dist_x_.param(std::normal_distribution<float>::param_type(params_.noise_x_mean, params_.noise_x_stddev));
-  dist_y_.param(std::normal_distribution<float>::param_type(params_.noise_y_mean, params_.noise_y_stddev));
-  dist_z_.param(std::normal_distribution<float>::param_type(params_.noise_z_mean, params_.noise_z_stddev));
-  dist_yaw_.param(std::normal_distribution<float>::param_type(params_.noise_yaw_mean, params_.noise_yaw_stddev));
-  dist_att_.param(std::normal_distribution<float>::param_type(params_.noise_att_mean, params_.noise_att_stddev));
-  //######################################################
+  if (enable_drift_) {
+    T_W_BdLast_.setIdentity();
+    T_W_BLast_.setIdentity();
+    dist_x_.param(std::normal_distribution<float>::param_type(
+        params_.noise_x_mean, params_.noise_x_stddev));
+    dist_y_.param(std::normal_distribution<float>::param_type(
+        params_.noise_y_mean, params_.noise_y_stddev));
+    dist_z_.param(std::normal_distribution<float>::param_type(
+        params_.noise_z_mean, params_.noise_z_stddev));
+    dist_yaw_.param(std::normal_distribution<float>::param_type(
+        params_.noise_yaw_mean, params_.noise_yaw_stddev));
+    dist_att_.param(std::normal_distribution<float>::param_type(
+        params_.noise_att_mean, params_.noise_att_stddev));
+  }
 
   if (params_.publish_local_map) {
     local_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>(params_.local_map_pub_topic,
@@ -83,9 +88,6 @@ void LaserSlamWorker::init(
   export_trajectory_srv_ = nh.advertiseService(
       "export_trajectory",
       &LaserSlamWorker::exportTrajectoryServiceCall, this);
-  export_drift_srv_ = nh.advertiseService(
-      "export_drift",
-      &LaserSlamWorker::exportDriftServiceCall, this);
 
   voxel_filter_.setLeafSize(params_.voxel_size_m, params_.voxel_size_m,
                             params_.voxel_size_m);
@@ -111,22 +113,19 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
     // Get the tf transform.
     tf::StampedTransform tf_transform;
     tf_listener_->lookupTransform(params_.odom_frame, params_.sensor_frame,
-                                 cloud_msg_in.header.stamp, tf_transform);
+        cloud_msg_in.header.stamp, tf_transform);
 
-    //######################### ADD DRIFT ###############################
-    tf::Transform T_B_Bd; // B = Sensor frame. Bd = Drifted sensor frame.
-    std::string stamp;
-    if(enable_drift_)
-    {
-      tf::Transform T_W_B = tf_transform; // W = Odom frame.
+    // Add drift
+    // B = Sensor frame. Bd = Drifted sensor frame. W = Odom frame.
+    if(enable_drift_) {
+      tf::Transform T_W_B = tf_transform;
 
-      // 1.) Compute odometry since last update T_BLast_B.
-      tf::Transform T_BLast_B = (T_W_BLast_.inverse())*T_W_B;
+      // Compute odometry since last update T_BLast_B.
+      tf::Transform T_BLast_B = (T_W_BLast_.inverse()) * T_W_B;
       tf::Vector3 transl_gt = T_BLast_B.getOrigin();
       tf::Quaternion quat_gt = T_BLast_B.getRotation();
 
-      // 2.) Add noise in local frame. T_BdLast_Bd = adddNoise(T_BLast_B)
-      // Sample noise.
+      // Add noise in local frame. T_BdLast_Bd = adddNoise(T_BLast_B)
       float noise_x = dist_x_(generator_);
       float noise_y = dist_y_(generator_);
       float noise_z = dist_z_(generator_);
@@ -141,29 +140,19 @@ void LaserSlamWorker::scanCallback(const sensor_msgs::PointCloud2& cloud_msg_in)
       transl_gt.setZ(noise_z + T_BLast_B.getOrigin().z());
       tf::Transform T_BdLast_Bd = T_BLast_B;
       T_BdLast_Bd.setOrigin(transl_gt); // Add translation drift.
-      T_BdLast_Bd.setRotation(quat_gt*quat_noise);  // Add rotation drift.
+      T_BdLast_Bd.setRotation(quat_gt * quat_noise);  // Add rotation drift.
 
-      // 3.) Compute drifted sensor frame T_W_Bd.
-      tf::Transform T_W_Bd = T_W_BdLast_*T_BdLast_Bd;
+      // Compute drifted sensor frame T_W_Bd.
+      tf::Transform T_W_Bd = T_W_BdLast_ * T_BdLast_Bd;
       tf_transform.setData(T_W_Bd);
-      tf_transform.child_frame_id_ = params_.sensor_drifted_frame;
 
-      // 4.) Compute relation to actual sensor frame T_B_Bd.
-      tf::Transform T_B_Bd = (T_W_B.inverse())*T_W_Bd;
-      tf::StampedTransform T_B_Bd_stamped = tf::StampedTransform(T_B_Bd, tf_transform.stamp_, params_.sensor_frame, params_.sensor_drifted_frame);
-      br_.sendTransform(T_B_Bd_stamped);  // Publish for visualization.
-      T_B_Bd_vec.push_back(T_B_Bd_stamped); // For post-processing.
-
-      // 5.) Store values for next iteration.
+      // Store values for next iteration.
       T_W_BdLast_ = T_W_Bd;
       T_W_BLast_ = T_W_B;
-
-      // 6.) ToDo(alaturn) Store values for post-processing.
-      // float drift_abs = T_B_Bd.getOrigin().length();
-      // float drift_rel = (drift_abs/path_length_)*100.0;
+    } else {
+      T_W_BLast_ = tf_transform;
+      T_W_BdLast_ = tf_transform;
     }
-
-    //###################################################################
 
     bool process_scan = false;
     SE3 current_pose;
@@ -415,7 +404,16 @@ void LaserSlamWorker::publishTrajectories() {
   if (trajectory.size() > 0u) publishTrajectory(trajectory, trajectory_pub_);
 }
 
-// TODO can we move?
+SE3 LaserSlamWorker::tfTransformToSE3(const tf::Transform& tf_transform) {
+  SE3::Position pos(tf_transform.getOrigin().getX(), tf_transform.getOrigin().getY(),
+                    tf_transform.getOrigin().getZ());
+  SE3::Rotation::Implementation rot(tf_transform.getRotation().getW(),
+                                    tf_transform.getRotation().getX(),
+                                    tf_transform.getRotation().getY(),
+                                    tf_transform.getRotation().getZ());
+  return SE3(pos, rot);
+}
+
 Pose LaserSlamWorker::tfTransformToPose(const tf::StampedTransform& tf_transform) {
   // Register new pose.
   Pose pose;
@@ -641,47 +639,5 @@ bool LaserSlamWorker::exportTrajectoryServiceCall(std_srvs::Empty::Request& req,
                        "/tmp/online_matcher/trajectory.csv");
   return true;
 }
-
-bool LaserSlamWorker::exportDriftServiceCall(std_srvs::Empty::Request& req,
-                                                  std_srvs::Empty::Response& res) {
-
-  if(enable_drift_)
-  {
-    std::string filename = "/tmp/online_matcher/drift_values.csv";  // ToDo(alaturn) Ensure that directory exists.
-    std::ofstream output_file;
-    output_file.open(filename.c_str(), std::ofstream::out | std::ofstream::trunc);
-    output_file << "Sensor Frame: "<<params_.sensor_frame<<"; sensor_frame_drifted: "<<params_.sensor_drifted_frame<<std::endl;
-    // ToDo(alaturn) Write out drift.
-    int i = 0;
-    for(auto it = T_B_Bd_vec.begin(); it != T_B_Bd_vec.end(); it++)
-    {
-      i++;
-      output_file << std::to_string(it->stamp_.toSec()) << " "; // Timestamp.
-      output_file << "t_x: " << it->getOrigin().x() << " ";
-      output_file << "t_y: " << it->getOrigin().y() << " ";
-      output_file << "t_z: " << it->getOrigin().z() << " ";
-      output_file << "R_11: " << it->getBasis().getRow(0).x() << " ";
-      output_file << "R_12: " << it->getBasis().getRow(0).y() << " ";
-      output_file << "R_13: " << it->getBasis().getRow(0).z() << " ";
-      output_file << "R_21: " << it->getBasis().getRow(1).x() << " ";
-      output_file << "R_22: " << it->getBasis().getRow(1).y() << " ";
-      output_file << "R_23: " << it->getBasis().getRow(1).z() << " ";
-      output_file << "R_31: " << it->getBasis().getRow(2).x() << " ";
-      output_file << "R_32: " << it->getBasis().getRow(2).y() << " ";
-      output_file << "R_33: " << it->getBasis().getRow(2).z() << " ";
-      output_file << std::endl;
-      // output_file << "path_length: " << -1 << " ";
-      // output_file << "absolute_drift_m: " << -1 << " ";
-      // output_file << "relative_drift: " << -1 << " ";
-    }
-    output_file.close();
-    LOG(INFO) << "Exported " << i << " drifts to " << filename << ".";
-  }
-  else{
-    LOG(INFO) << "No drift was added. Nothing to export!";
-  }
-  return true;
-}
-
 
 } // namespace laser_slam_ros
